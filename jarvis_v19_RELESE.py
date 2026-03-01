@@ -66,6 +66,7 @@ PROMPTS_FILE    = JARVIS_DATA_DIR / "orchestrator" / "prompts.json"
 VECTOR_FILE     = JARVIS_DATA_DIR / "memory" / "vectors.pkl"
 FACTS_FILE      = JARVIS_DATA_DIR / "memory" / "facts.json"
 CONV_FILE       = JARVIS_DATA_DIR / "memory" / "conversations.json"
+TASKS_FILE      = JARVIS_DATA_DIR / "tasks.json"
 
 MODELS = {
     "czech_gateway": "jobautomation/OpenEuroLLM-Czech:latest",
@@ -679,16 +680,17 @@ class ToolExecutor:
         self.tool_results: Dict[str, str] = {}  # Pro paralelní kroky
         
         self.tools = {
-            "get_time":    self._tool_get_time,
-            "open_app":    self._tool_open_app,
-            "close_app":   self._tool_close_app,
-            "run_command": self._tool_run_command,
-            "web_search":  self._tool_web_search,
-            "write_file":  self._tool_write_file,
-            "read_file":   self._tool_read_file,
-            "recall":      self._tool_recall,
-            "list_dir":    self._tool_list_dir,
-            "system_info": self._tool_system_info,
+            "get_time":      self._tool_get_time,
+            "open_app":      self._tool_open_app,
+            "close_app":     self._tool_close_app,
+            "run_command":   self._tool_run_command,
+            "web_search":    self._tool_web_search,
+            "write_file":    self._tool_write_file,
+            "read_file":     self._tool_read_file,
+            "recall":        self._tool_recall,
+            "list_dir":      self._tool_list_dir,
+            "system_info":   self._tool_system_info,
+            "manage_tasks":  self._tool_manage_tasks,
         }
     
     def _self_check(self, action_desc: str, intent: str) -> Dict:
@@ -1033,6 +1035,10 @@ Tools:
   recall          (query)
   list_dir        (path)
   system_info
+  manage_tasks    (action, task_description, task_id)
+    action: "add" | "list" | "remove"
+    task_description: popis úkolu (pro add)
+    task_id: ID úkolu (pro remove)
 
 Special:
   ask_user        (question)
