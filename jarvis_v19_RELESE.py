@@ -41,6 +41,18 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("JARVIS.V19")
+# ─────────────────────────────────────────
+# DYNAMICKÉ CESTY
+# ─────────────────────────────────────────
+JARVIS_DATA_DIR = Path.cwd() / "jarvis_data"
+
+def _ensure_data_dirs():
+    """Vytvoří adresáře pro data pokud neexistují"""
+    for subdir in ["memory", "orchestrator"]:
+        (JARVIS_DATA_DIR / subdir).mkdir(parents=True, exist_ok=True)
+
+# Inicializace adresářů při startu
+_ensure_data_dirs()
 
 # ─────────────────────────────────────────
 # KONSTANTY
@@ -48,12 +60,13 @@ logger = logging.getLogger("JARVIS.V19")
 OLLAMA_URL      = "http://localhost:11434/api/chat"
 EMBED_URL       = "http://localhost:11434/api/embeddings"
 EMBED_MODEL     = "nomic-embed-text"
-STATE_FILE      = "C:\\jarvis\\memory\\active_state.json"
-UNDO_FILE       = "C:\\jarvis\\memory\\undo_stack.json"
-PROMPTS_FILE    = "C:\\jarvis\\orchestrator\\prompts.json"
-VECTOR_FILE     = "C:\\jarvis\\memory\\vectors.pkl"
-FACTS_FILE      = "C:\\jarvis\\memory\\facts.json"
-CONV_FILE       = "C:\\jarvis\\memory\\conversations.json"
+STATE_FILE      = JARVIS_DATA_DIR / "memory" / "active_state.json"
+UNDO_FILE       = JARVIS_DATA_DIR / "memory" / "undo_stack.json"
+PROMPTS_FILE    = JARVIS_DATA_DIR / "orchestrator" / "prompts.json"
+VECTOR_FILE     = JARVIS_DATA_DIR / "memory" / "vectors.pkl"
+FACTS_FILE      = JARVIS_DATA_DIR / "memory" / "facts.json"
+CONV_FILE       = JARVIS_DATA_DIR / "memory" / "conversations.json"
+TASKS_FILE      = JARVIS_DATA_DIR / "tasks.json"
 
 MODELS = {
     "czech_gateway": "jobautomation/OpenEuroLLM-Czech:latest",
@@ -667,16 +680,17 @@ class ToolExecutor:
         self.tool_results: Dict[str, str] = {}  # Pro paralelní kroky
         
         self.tools = {
-            "get_time":    self._tool_get_time,
-            "open_app":    self._tool_open_app,
-            "close_app":   self._tool_close_app,
-            "run_command": self._tool_run_command,
-            "web_search":  self._tool_web_search,
-            "write_file":  self._tool_write_file,
-            "read_file":   self._tool_read_file,
-            "recall":      self._tool_recall,
-            "list_dir":    self._tool_list_dir,
-            "system_info": self._tool_system_info,
+            "get_time":      self._tool_get_time,
+            "open_app":      self._tool_open_app,
+            "close_app":     self._tool_close_app,
+            "run_command":   self._tool_run_command,
+            "web_search":    self._tool_web_search,
+            "write_file":    self._tool_write_file,
+            "read_file":     self._tool_read_file,
+            "recall":        self._tool_recall,
+            "list_dir":      self._tool_list_dir,
+            "system_info":   self._tool_system_info,
+            "manage_tasks":  self._tool_manage_tasks,
         }
     
     def _self_check(self, action_desc: str, intent: str) -> Dict:
@@ -1021,6 +1035,10 @@ Tools:
   recall          (query)
   list_dir        (path)
   system_info
+  manage_tasks    (action, task_description, task_id)
+    action: "add" | "list" | "remove"
+    task_description: popis úkolu (pro add)
+    task_id: ID úkolu (pro remove)
 
 Special:
   ask_user        (question)
@@ -1521,27 +1539,41 @@ class JarvisV19:
 # MAIN
 # ─────────────────────────────────────────
 if __name__ == "__main__":
-    jarvis = JarvisV19(streaming=True)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="JARVIS V19 AI Assistant")
+    parser.add_argument("query", nargs="?", help="Jednorázový dotaz (přeskočí interaktivní mód)")
+    parser.add_argument("--stream/--no-stream", default=True, help="Streamování odpovědi")
+    args = parser.parse_args()
+    
+    jarvis = JarvisV19(streaming=args.stream)
     
     def print_stream(text: str):
         print(text, end="", flush=True)
     
-    while True:
-        try:
-            query = input("\nTy: ").strip()
-            if not query:
-                continue
-            
-            if query.lower() == "exit":
-                print("👋 Na shledanou!")
-                break
-            
-            print("\nJARVIS: ", end="", flush=True)
-            response = jarvis.process(query, stream_callback=print_stream)
-            print()  # Newline after streaming
-            
-        except KeyboardInterrupt:
-            print("\n   (Napiš 'pokracovat' nebo 'clear')")
-        except Exception as e:
-            logger.error(f"Error: {e}", exc_info=True)
-            print(f"\n❌ Chyba: {e}")
+    if args.query:
+        # Jednorázové spuštění (CLI mód)
+        print(f"\nJARVIS: ", end="", flush=True)
+        response = jarvis.process(args.query, stream_callback=print_stream)
+        print()  # Newline after streaming
+    else:
+        # Interaktivní mód
+        while True:
+            try:
+                query = input("\nTy: ").strip()
+                if not query:
+                    continue
+                
+                if query.lower() == "exit":
+                    print("👋 Na shledanou!")
+                    break
+                
+                print("\nJARVIS: ", end="", flush=True)
+                response = jarvis.process(query, stream_callback=print_stream)
+                print()  # Newline after streaming
+                
+            except KeyboardInterrupt:
+                print("\n   (Napiš 'pokracovat' nebo 'clear')")
+            except Exception as e:
+                logger.error(f"Error: {e}", exc_info=True)
+                print(f"\n❌ Chyba: {e}")
