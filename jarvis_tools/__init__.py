@@ -50,7 +50,7 @@ def create_tool_class(jarvis_instance):
             from ddgs import DDGS
             results = DDGS().text(q, max_results=3)
             if not results: return f"{Colors.WARNING} No results"
-            out = [f"{Colors.SEARCH} Results: {q}\n"]
+            out = [f"{Colors.INFO} Results: {q}\n"]
             for r in results: out.extend([f"• {r.get('title','')}", f"  {r.get('href','')}", ""])
             return "\n".join(out)
         except ImportError: return f"{Colors.ERROR} ddgs not installed"
@@ -72,18 +72,47 @@ def create_tool_class(jarvis_instance):
             path = Path(fp).resolve()
             if not path.exists(): return f"{Colors.ERROR} Not found"
             with open(path, "r", encoding="utf-8") as f: content = f.read(5000)
-            return f"{Colors.FILE} {path.name}\n{'-'*40}\n{content}"
+            return f"{Colors.INFO} {path.name}\n{'-'*40}\n{content}"
         except Exception as e: return f"{Colors.ERROR} {e}"
     
     def _tool_recall(params):
         q = params.get("query", "")
         if not q: return f"{Colors.ERROR} Missing query"
         try:
-            results = jarvis_instance.memory.search_facts_vector(q, k=5)
+            results = jarvis_instance.memory.recall(q, k=5)
             if not results: return f"{Colors.WARNING} No memories"
             out = [f"{Colors.INFO} Recall: {q}\n"]
-            for r in results: out.extend([f"• {r.get('content','')}", f"  Score: {r.get('score',0):.2f}", ""])
+            for r in results:
+                out.extend([
+                    f"• {r.get('content','')}",
+                    f"  Score: {r.get('score',0):.2f} | Type: {r.get('type','?')}",
+                    "",
+                ])
             return "\n".join(out)
+        except Exception as e: return f"{Colors.ERROR} {e}"
+    
+    def _tool_remember(params):
+        content = params.get("content", "")
+        if not content: return f"{Colors.ERROR} Missing content"
+        fact_type = params.get("fact_type", "observation")
+        confidence = float(params.get("confidence", 1.0))
+        try:
+            fact = jarvis_instance.memory.remember(
+                content=content,
+                fact_type=fact_type,
+                source="user",
+                confidence=confidence,
+            )
+            return f"{Colors.SUCCESS} Remembered [{fact.id}]: {content}"
+        except Exception as e: return f"{Colors.ERROR} {e}"
+    
+    def _tool_forget(params):
+        fact_id = params.get("fact_id", "")
+        if not fact_id: return f"{Colors.ERROR} Missing fact_id"
+        try:
+            removed = jarvis_instance.memory.forget(fact_id)
+            if removed: return f"{Colors.SUCCESS} Forgotten [{fact_id}]"
+            return f"{Colors.WARNING} Memory [{fact_id}] not found"
         except Exception as e: return f"{Colors.ERROR} {e}"
     
     def _tool_list_dir(params):
@@ -92,7 +121,7 @@ def create_tool_class(jarvis_instance):
             target = Path(p).resolve()
             if not target.exists(): return f"{Colors.ERROR} Not found"
             items = [f"{'📁' if i.is_dir() else '📄'} {i.name}{'' if i.is_dir() else f' ({i.stat().st_size}B)'}" for i in target.iterdir()]
-            return f"{Colors.FILE} {target}\n" + "\n".join(items) if items else f"{Colors.WARNING} Empty"
+            return f"{Colors.INFO} {target}\n" + "\n".join(items) if items else f"{Colors.WARNING} Empty"
         except Exception as e: return f"{Colors.ERROR} {e}"
     
     def _tool_system_info(params):
@@ -141,14 +170,27 @@ def create_tool_class(jarvis_instance):
         
         return f"{Colors.ERROR} Unknown action: {action}"
     
-    return {"get_time": _tool_get_time, "open_app": _tool_open_app, "close_app": _tool_close_app,
-            "run_command": _tool_run_command, "web_search": _tool_web_search, "write_file": _tool_write_file,
-            "read_file": _tool_read_file, "recall": _tool_recall, "list_dir": _tool_list_dir,
-            "system_info": _tool_system_info, "manage_tasks": _tool_manage_tasks}
+    return {
+        "get_time": _tool_get_time,
+        "open_app": _tool_open_app,
+        "close_app": _tool_close_app,
+        "run_command": _tool_run_command,
+        "web_search": _tool_web_search,
+        "write_file": _tool_write_file,
+        "read_file": _tool_read_file,
+        "recall": _tool_recall,
+        "remember": _tool_remember,
+        "forget": _tool_forget,
+        "list_dir": _tool_list_dir,
+        "system_info": _tool_system_info,
+        "manage_tasks": _tool_manage_tasks,
+    }
 
 TOOLS_SCHEMA = """
 RULE: Mark parallel steps with "parallel": true
 RULE: For memory queries → recall tool
+RULE: For storing facts → remember tool
+RULE: For removing memories → forget tool
 RULE: For task management → manage_tasks tool
 
 Tools:
@@ -160,6 +202,9 @@ Tools:
   write_file      (file_path, content, _intent)
   read_file       (file_path)
   recall          (query)
+  remember        (content, fact_type, confidence)
+    fact_type: "preference" | "fact" | "event" | "observation"
+  forget          (fact_id)
   list_dir        (path)
   system_info
   manage_tasks    (action, task_description, task_id)

@@ -12,6 +12,16 @@ FACTS_FILE = JARVIS_DATA_DIR / "memory" / "facts.json"
 CONV_FILE = JARVIS_DATA_DIR / "memory" / "conversations.json"
 TASKS_FILE = JARVIS_DATA_DIR / "tasks.json"
 
+CHROMA_DIR = JARVIS_DATA_DIR / "chromadb"
+KG_FILE = JARVIS_DATA_DIR / "knowledge_graph" / "graph.json"
+
+SEMANTIC_COLLECTION = "jarvis_semantic"
+EPISODIC_COLLECTION = "jarvis_episodic"
+WORKING_MEMORY_CAPACITY = 7
+
+CONSOLIDATION_IDLE_MINUTES = 60
+CONSOLIDATION_HOUR = 2
+
 OLLAMA_URL = "http://localhost:11434/api/chat"
 EMBED_URL = "http://localhost:11434/api/embeddings"
 EMBED_MODEL = "nomic-embed-text"
@@ -40,7 +50,7 @@ SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you"
 MEMORY_PATTERNS = ["what do you know about me", "co o me vis", "co vsechno o me", "what do you remember", "co si pamatujes", "my preferences", "tell me about myself", "co vis o me", "moje preference"]
 
 def ensure_data_dirs() -> None:
-    for subdir in ["memory", "orchestrator"]:
+    for subdir in ["memory", "orchestrator", "chromadb", "knowledge_graph"]:
         (JARVIS_DATA_DIR / subdir).mkdir(parents=True, exist_ok=True)
 
 ensure_data_dirs()
