@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple, Callable
 from collections import deque
 
 from jarvis_config import OLLAMA_URL, MODELS, HW_OPTIONS, MAX_REPLANS, MAX_HISTORY, RATE_LIMIT_SECONDS, SMALLTALK_PATTERNS, MEMORY_PATTERNS
-from jarvis_memory import MemoryV19
+from jarvis_memory import CognitiveMemory
 from jarvis_tools import create_tool_class, TOOLS_SCHEMA
 
 logger = logging.getLogger("JARVIS.CORE")
@@ -79,9 +79,8 @@ class JarvisV19:
         logger.info("Initializing JARVIS V19...")
         self.streaming = streaming
         self.bridge = CzechBridgeClient()
-        self.memory = MemoryV19()
+        self.memory = CognitiveMemory(start_consolidation=True)
         self.tools = create_tool_class(self)
-        self.working_memory = []
         self.tool_results = {}
         logger.info(f"Ready with {len(self.tools)} tools")
     
@@ -162,5 +161,8 @@ class JarvisV19:
         
         self.memory.add_message("assistant", response)
         return response
+    
+    def shutdown(self) -> None:
+        self.memory.shutdown()
 
 __all__ = ["JarvisV19", "check_stop"]

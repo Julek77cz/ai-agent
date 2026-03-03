@@ -1,0 +1,22 @@
+{
+  "f6d1de427ee3": {
+    "id": "f6d1de427ee3",
+    "content": "User likes Python",
+    "fact_type": "preference",
+    "source": "test",
+    "confidence": 0.9,
+    "embedding_id": "f6d1de427ee3",
+    "created_at": "2026-03-03T07:17:48.651097",
+    "updated_at": "2026-03-03T07:17:48.651105"
+  },
+  "c030bfdaabf8": {
+    "id": "c030bfdaabf8",
+    "content": "User prefers dark mode",
+    "fact_type": "preference",
+    "source": "user",
+    "confidence": 0.95,
+    "embedding_id": "c030bfdaabf8",
+    "created_at": "2026-03-03T07:18:03.214318",
+    "updated_at": "2026-03-03T07:18:03.214327"
+  }
+}
