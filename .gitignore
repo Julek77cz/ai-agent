@@ -20,12 +20,16 @@ jarvis_data/knowledge_graph/
 jarvis_data/memory/vectors.pkl
 jarvis_data/memory/active_state.json
 jarvis_data/memory/undo_stack.json
+jarvis_data/memory/facts.json
+jarvis_data/memory/conversations.json
+jarvis_data/tasks.json
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
@@ -33,3 +37,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
