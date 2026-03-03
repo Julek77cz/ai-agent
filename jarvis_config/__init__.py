@@ -30,6 +30,7 @@ MODELS: Dict[str, str] = {
     "czech_gateway": "jobautomation/OpenEuroLLM-Czech:latest",
     "planner": "qwen2.5:3b-instruct",
     "verifier": "qwen2.5:3b-instruct",
+    "reasoner": "qwen2.5:3b-instruct",
 }
 
 HW_OPTIONS: Dict[str, Any] = {
@@ -44,6 +45,11 @@ CONFIDENCE_THRESHOLD = 0.7
 
 DESTRUCTIVE_TOOLS = {"run_command", "write_file"}
 SIMPLE_TOOLS = {"get_time", "open_app", "close_app", "read_file", "recall", "list_dir", "system_info"}
+
+# ReAct Reasoning Configuration
+REACTION_MAX_ITERATIONS = 10
+VERIFIER_ENABLED = True
+VERIFIER_THRESHOLD = 0.7
 
 SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you", "what can you do", "who are you", "jak se mas", "good morning", "good night", "thank you", "thanks", "diky", "dekuji", "super"]
 
