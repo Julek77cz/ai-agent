@@ -64,10 +64,11 @@ class CzechBridgeClient:
                 for line in r.iter_lines():
                     if line:
                         try:
-                            data = json.loads(line.decode('utf-8')[6:])
-                            content = data.get("message", {}).get("content", "")
-                            full += content
-                            if callback: callback(content)
+                            data = json.loads(line.decode('utf-8'))
+                            if not data.get("done"):
+                                content = data.get("message", {}).get("content", "")
+                                full += content
+                                if callback: callback(content)
                         except: pass
                 return full
         except Exception as e:
@@ -82,6 +83,16 @@ class JarvisV19:
         self.memory = CognitiveMemory(start_consolidation=True)
         self.tools = create_tool_class(self)
         self.tool_results = {}
+
+        from jarvis_reasoning import ReasoningEngine
+        self._reasoning = ReasoningEngine(
+            bridge=self.bridge,
+            memory=self.memory,
+            tools=self.tools,
+            check_stop_fn=check_stop,
+            streaming=streaming,
+        )
+
         logger.info(f"Ready with {len(self.tools)} tools")
     
     def _self_check(self, action_desc: str, intent: str) -> Dict:
@@ -120,49 +131,20 @@ class JarvisV19:
             return response
         
         query_en = self._translate_to_en(query)
-        context = "\n".join([f.content for f in self.memory.get_all_facts()])
-        recent = "\n".join([f"{c.role}: {c.content[:100]}" for c in self.memory.get_recent(5)])
-        
-        plan_prompt = f"Context:\n{context}\n\nRecent:\n{recent}\n\nUser: {query_en}\n\nCreate plan JSON:"
-        plan_response = self.bridge.call_json("planner", [{"role": "user", "content": plan_prompt}], system_prompt="You are JARVIS planner. Output JSON.")
-        
-        if not plan_response:
-            msg = "Plánování selhalo"
-            if stream_callback: stream_callback(msg)
-            return msg
-        
-        plan = plan_response.get("plan", [])
-        results = []
-        
-        for step in plan:
-            if check_stop(): break
-            step_type = step.get("type", "action")
-            if step_type == "tool":
-                tool_name = step.get("tool", "")
-                params = step.get("params", {})
-                if tool_name not in self.tools: continue
-                check = self._self_check(f"tool: {tool_name}", str(params))
-                if not check.get("ok"): continue
-                try:
-                    result = self.tools[tool_name](params)
-                    results.append(result)
-                    self.tool_results[tool_name] = result
-                except Exception as e: results.append(f"Error: {e}")
-        
-        orch_prompt = f"Context:\n{context}\n\nRecent:\n{recent}\n\nUser: {query}\n\n{TOOLS_SCHEMA}"
-        
-        if self.streaming and stream_callback:
-            response = self.bridge.call_stream("czech_gateway", [{"role": "user", "content": orch_prompt}], system_prompt="You are JARVIS. Respond in Czech.", callback=stream_callback)
-        else:
-            response = self.bridge.call_json("czech_gateway", [{"role": "user", "content": orch_prompt}], system_prompt="You are JARVIS. Respond in Czech.")
-            if response: response = response.get("message", {}).get("content", "Hotovo")
-        
-        if not response: response = "\n".join(results) if results else "Hotovo"
-        
+
+        response = self._reasoning.reason(
+            query=query,
+            query_en=query_en,
+            stream_callback=stream_callback,
+        )
+
+        if not response:
+            response = "Hotovo"
+
         self.memory.add_message("assistant", response)
         return response
     
     def shutdown(self) -> None:
         self.memory.shutdown()
 
-__all__ = ["JarvisV19", "check_stop"]
+__all__ = ["JarvisV19", "CzechBridgeClient", "check_stop"]
