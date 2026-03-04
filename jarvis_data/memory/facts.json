@@ -18,5 +18,15 @@
     "embedding_id": "c030bfdaabf8",
     "created_at": "2026-03-03T07:18:03.214318",
     "updated_at": "2026-03-03T07:18:03.214327"
+  },
+  "5416eb24ae95": {
+    "id": "5416eb24ae95",
+    "content": "Test fact for WAL",
+    "fact_type": "test",
+    "source": "test",
+    "confidence": 1.0,
+    "embedding_id": "5416eb24ae95",
+    "created_at": "2026-03-04T10:51:53.942087",
+    "updated_at": "2026-03-04T10:51:53.942089"
   }
 }

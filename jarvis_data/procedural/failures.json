@@ -1,0 +1,77 @@
+[
+  {
+    "id": "e94694d6ab9d",
+    "timestamp": "2026-03-04T10:50:13.988005",
+    "tool": "test_tool",
+    "params": {
+      "param1": "value1"
+    },
+    "error_type": "test_error",
+    "error_message": "This is a test error",
+    "context": "",
+    "query": "test query",
+    "resolved": true,
+    "resolution": "Used correct parameters",
+    "recovery_id": "9a1740897372"
+  },
+  {
+    "id": "f6436e60fb7f",
+    "timestamp": "2026-03-04T10:50:31.309775",
+    "tool": "failing_tool",
+    "params": {
+      "test": "value"
+    },
+    "error_type": "general_error",
+    "error_message": "Error in failing_tool: Test error",
+    "context": "parallel_executor",
+    "query": "",
+    "resolved": false,
+    "resolution": "",
+    "recovery_id": ""
+  },
+  {
+    "id": "5a43f6cf2f81",
+    "timestamp": "2026-03-04T10:51:32.718066",
+    "tool": "failing_tool",
+    "params": {
+      "test": "value"
+    },
+    "error_type": "general_error",
+    "error_message": "Error in failing_tool: Test error",
+    "context": "parallel_executor",
+    "query": "",
+    "resolved": false,
+    "resolution": "",
+    "recovery_id": ""
+  },
+  {
+    "id": "b0b49b29c37f",
+    "timestamp": "2026-03-04T10:51:53.943326",
+    "tool": "read_file",
+    "params": {
+      "path": "/nonexistent/file.txt"
+    },
+    "error_type": "file_not_found",
+    "error_message": "File not found: /nonexistent/file.txt",
+    "context": "",
+    "query": "Read a file",
+    "resolved": false,
+    "resolution": "",
+    "recovery_id": ""
+  },
+  {
+    "id": "69c00a70e8df",
+    "timestamp": "2026-03-04T10:52:11.738067",
+    "tool": "read_file",
+    "params": {
+      "path": "/nonexistent/file.txt"
+    },
+    "error_type": "file_not_found",
+    "error_message": "File not found: /nonexistent/file.txt",
+    "context": "",
+    "query": "Read a file",
+    "resolved": false,
+    "resolution": "",
+    "recovery_id": ""
+  }
+]
