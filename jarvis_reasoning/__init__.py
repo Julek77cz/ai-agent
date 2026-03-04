@@ -777,6 +777,24 @@ from jarvis_reasoning.circuit_breaker import (
     reset_react_circuit_breaker,
 )
 
+# Import Swarm components
+from jarvis_reasoning.swarm import (
+    SubTask,
+    AgentResult,
+    SwarmExecution,
+    SubAgent,
+    SwarmManager,
+    ROLE_TOOLS,
+    execute_swarm_task,
+)
+from jarvis_reasoning.swarm_executor import (
+    AsyncTaskResult,
+    AsyncSwarmExecutor,
+    SharedContext,
+    ContextAwareSwarmExecutor,
+    BatchSwarmExecutor,
+)
+
 __all__ = [
     # New ReAct components
     "ToolResultParser",
@@ -802,4 +820,18 @@ __all__ = [
     "StepVerifier",
     "VerificationResult",
     "ParallelToolExecutor",
+    # Swarm Architecture
+    "SubTask",
+    "AgentResult",
+    "SwarmExecution",
+    "SubAgent",
+    "SwarmManager",
+    "ROLE_TOOLS",
+    "execute_swarm_task",
+    # Async Swarm Executor
+    "AsyncTaskResult",
+    "AsyncSwarmExecutor",
+    "SharedContext",
+    "ContextAwareSwarmExecutor",
+    "BatchSwarmExecutor",
 ]

@@ -15,10 +15,16 @@ from jarvis_config import (
     RATE_LIMIT_SECONDS,
     SMALLTALK_PATTERNS,
     MEMORY_PATTERNS,
+    SWARM_ENABLED,
+    SWARM_MAX_AGENTS,
+    SWARM_TIMEOUT_SECONDS,
+    SWARM_COMPLEXITY_THRESHOLD,
+    SWARM_COMPLEXITY_INDICATORS,
 )
 from jarvis_memory import CognitiveMemory
 from jarvis_tools import create_tool_class, TOOLS_SCHEMA, validate_tool_params
 from jarvis_reasoning import ReActLoop
+from jarvis_reasoning.swarm import SwarmManager
 
 logger = logging.getLogger("JARVIS.CORE")
 _emergency_stop = threading.Event()
@@ -147,7 +153,25 @@ class JarvisV19:
             max_iterations=10,
         )
 
+        # Initialize Swarm Manager for complex tasks
+        self._swarm_manager = None
+        if SWARM_ENABLED:
+            self._swarm_manager = SwarmManager(
+                bridge=self.bridge,
+                memory=self.memory,
+                tools=self.tools,
+                max_agents=SWARM_MAX_AGENTS,
+                timeout_seconds=SWARM_TIMEOUT_SECONDS,
+            )
+            logger.info("Swarm Manager initialized: max_agents=%d", SWARM_MAX_AGENTS)
+
         logger.info(f"Ready with {len(self.tools)} tools")
+
+    def _is_complex_task(self, query: str) -> bool:
+        """Determine if query is complex enough for swarm execution."""
+        if not self._swarm_manager:
+            return False
+        return self._swarm_manager.is_complex_task(query)
 
     def _detect_smalltalk(self, query: str) -> bool:
         q = query.lower()
@@ -177,10 +201,11 @@ class JarvisV19:
 
     def process(self, query: str, stream_callback: Callable = None) -> str:
         """
-        Process a user query using ReAct reasoning loop.
+        Process a user query using ReAct reasoning loop or Swarm architecture.
 
         Smalltalk and memory queries are handled directly.
-        All other queries go through the ReAct reasoning loop.
+        Complex tasks use the Swarm architecture for parallel sub-agent execution.
+        All other queries go through the standard ReAct reasoning loop.
         """
         self.memory.add_message("user", query)
 
@@ -204,14 +229,56 @@ class JarvisV19:
             self.memory.add_message("assistant", response)
             return response
 
-        # Use ReAct reasoning loop for all other queries
-        response = self.reasoning.run(query, stream_callback=stream_callback)
+        # Check if task is complex enough for swarm execution
+        if self._swarm_manager and self._is_complex_task(query):
+            logger.info("Using Swarm architecture for complex task")
+            response = self._execute_swarm(query, stream_callback)
+        else:
+            # Use standard ReAct reasoning loop
+            response = self.reasoning.run(query, stream_callback=stream_callback)
 
         if not response:
             response = "Hotovo"
 
         self.memory.add_message("assistant", response)
         return response
+
+    def _execute_swarm(self, query: str, stream_callback: Callable = None) -> str:
+        """Execute complex task using Swarm architecture."""
+        if not self._swarm_manager:
+            return self.reasoning.run(query, stream_callback=stream_callback)
+
+        try:
+            # Decompose task into subtasks
+            subtasks = self._swarm_manager.decompose_task(query)
+
+            if len(subtasks) <= 1:
+                # Not actually complex - use standard loop
+                return self.reasoning.run(query, stream_callback=stream_callback)
+
+            # Assign roles to subtasks
+            assignments = self._swarm_manager.assign_roles(subtasks)
+
+            # Execute swarm
+            execution = self._swarm_manager.execute_swarm(query, subtasks, assignments)
+
+            # Aggregate results
+            execution = self._swarm_manager.aggregate_results(execution)
+
+            logger.info(
+                "Swarm execution complete: %d agents, %.2fs total",
+                len(execution.agent_results), execution.total_duration
+            )
+
+            if stream_callback:
+                stream_callback(execution.synthesis)
+
+            return execution.synthesis
+
+        except Exception as e:
+            logger.error("Swarm execution failed: %s", e)
+            # Fallback to standard ReAct loop
+            return self.reasoning.run(query, stream_callback=stream_callback)
 
     def shutdown(self) -> None:
         self.memory.shutdown()
