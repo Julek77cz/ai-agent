@@ -824,9 +824,6 @@ from jarvis_reasoning.circuit_breaker import (
     CircuitBreakerOpenError,
     CircuitState,
     FailureRecord,
-    # Global singleton functions (kept for backward compatibility)
-    get_react_circuit_breaker,
-    reset_react_circuit_breaker,
 )
 
 # Import Swarm components
@@ -858,9 +855,6 @@ __all__ = [
     "CircuitBreakerOpenError",
     "CircuitState",
     "FailureRecord",
-    # Global singleton functions (kept for backward compatibility)
-    "get_react_circuit_breaker",
-    "reset_react_circuit_breaker",
     # Context Summarizer (Dynamic Context Compression)
     "ContextSummarizer",
     "SimpleContextSummarizer",
