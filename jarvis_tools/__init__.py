@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 import uuid
 import logging
 from pathlib import Path
@@ -454,7 +455,7 @@ def create_tool_class(jarvis_instance):
         # Execute in isolated subprocess
         try:
             result = subprocess.run(
-                ["python3", str(script_path)],
+                [sys.executable, str(script_path)],
                 capture_output=True,
                 text=True,
                 timeout=min(timeout, 120),  # Max 120 seconds
