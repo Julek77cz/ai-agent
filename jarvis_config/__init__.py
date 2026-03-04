@@ -90,6 +90,46 @@ PROCEDURAL_PATTERN_CONFIDENCE_THRESHOLD = 0.7
 PROCEDURAL_MAX_RECOVERIES_STORED = 100
 PROCEDURAL_ANALYSIS_INTERVAL_MINUTES = 30
 
+# Multi-Agent Swarm Architecture Configuration
+SWARM_ENABLED = True  # Enable swarm for complex tasks
+SWARM_COMPLEXITY_THRESHOLD = 50  # Word count threshold for complexity detection
+SWARM_MAX_AGENTS = 4  # Maximum parallel sub-agents
+SWARM_TIMEOUT_SECONDS = 120  # Timeout per sub-agent task
+SWARM_RETRY_FAILED = False  # Retry failed sub-tasks
+SWARM_MAX_RETRIES = 2  # Maximum retry attempts
+SWARM_MIN_DEPENDENCIES = 1  # Min dependencies to use swarm
+
+# Agent Roles and Tool Permissions
+AGENT_ROLES: Dict[str, Dict[str, Any]] = {
+    "researcher": {
+        "description": "Information gathering and research",
+        "tools": ["web_search", "recall", "read_file", "list_dir", "get_time", "system_info"],
+        "max_iterations": 5,
+    },
+    "developer": {
+        "description": "Code and file operations",
+        "tools": ["run_command", "write_file", "read_file", "run_python", "list_dir"],
+        "max_iterations": 5,
+    },
+    "analyst": {
+        "description": "System analysis and monitoring",
+        "tools": ["system_info", "list_dir", "read_file", "get_time", "run_command"],
+        "max_iterations": 5,
+    },
+    "writer": {
+        "description": "Documentation and memory storage",
+        "tools": ["remember", "write_file", "read_file", "recall", "list_dir"],
+        "max_iterations": 5,
+    },
+}
+
+# Task complexity indicators for automatic swarm detection
+SWARM_COMPLEXITY_INDICATORS = [
+    "research", "hledej", "najdi", "analyzuj", "compare",
+    "porovnej", "vytvoř", "implementuj", "build", "create",
+    "multiple", "several", "více", "několik", "parallel", "simultaneously"
+]
+
 SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you", "what can you do", "who are you", "jak se mas", "good morning", "good night", "thank you", "thanks", "diky", "dekuji", "super"]
 
 MEMORY_PATTERNS = ["what do you know about me", "co o me vis", "co vsechno o me", "what do you remember", "co si pamatujes", "my preferences", "tell me about myself", "co vis o me", "moje preference"]
