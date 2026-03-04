@@ -262,31 +262,9 @@ class CircuitBreakerOpenError(Exception):
     pass
 
 
-# Global circuit breaker instance for ReAct loop
-_react_circuit_breaker: Optional[CircuitBreaker] = None
-
-
-def get_react_circuit_breaker() -> CircuitBreaker:
-    """Get or create the global ReAct circuit breaker instance."""
-    global _react_circuit_breaker
-    if _react_circuit_breaker is None:
-        _react_circuit_breaker = CircuitBreaker()
-    return _react_circuit_breaker
-
-
-def reset_react_circuit_breaker() -> None:
-    """Reset the global ReAct circuit breaker."""
-    global _react_circuit_breaker
-    if _react_circuit_breaker is not None:
-        _react_circuit_breaker.reset()
-
-
 __all__ = [
     "CircuitBreaker",
     "CircuitBreakerOpenError",
     "CircuitState",
     "FailureRecord",
-    # Global singleton functions (kept for backward compatibility but not recommended for new code)
-    "get_react_circuit_breaker",
-    "reset_react_circuit_breaker",
 ]
