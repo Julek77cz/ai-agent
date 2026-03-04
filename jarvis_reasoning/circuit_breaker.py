@@ -3,10 +3,13 @@
 Protects against infinite loops in the ReAct reasoning loop by tracking
 failures and opening the circuit when too many consecutive failures occur.
 """
+import hashlib
+import json
 import logging
 import time
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional, Any
+from typing import Callable, Optional, Any, Dict, List
 
 from jarvis_config import (
     CIRCUIT_BREAKER_ENABLED,
@@ -16,6 +19,15 @@ from jarvis_config import (
 )
 
 logger = logging.getLogger("JARVIS.CIRCUIT_BREAKER")
+
+
+@dataclass
+class FailureRecord:
+    """Record of a failure for pattern detection."""
+    tool: str
+    params_hash: str
+    error_hash: str
+    timestamp: float = field(default_factory=time.time)
 
 
 class CircuitState(Enum):
@@ -50,6 +62,10 @@ class CircuitBreaker:
         self._failure_count = 0
         self._success_count = 0
         self._last_failure_time: Optional[float] = None
+        
+        # Failure history for detecting repeated failures (immortality feature)
+        self._failure_history: List[FailureRecord] = []
+        self._max_history_size = 50  # Keep last 50 failures
 
     @property
     def state(self) -> CircuitState:
@@ -90,13 +106,45 @@ class CircuitBreaker:
             # Reset failure count on success
             self._failure_count = 0
 
-    def record_failure(self) -> None:
-        """Record a failed execution."""
+    def record_failure(
+        self,
+        tool: Optional[str] = None,
+        params: Optional[Dict] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Record a failed execution.
+        
+        Args:
+            tool: Name of the tool that failed (optional)
+            params: Parameters passed to the tool (optional)
+            error_message: Error message from the failure (optional)
+        """
         if not self._enabled:
             return
 
         self._failure_count += 1
         self._last_failure_time = time.time()
+        
+        # Track failure history for pattern detection
+        if tool and params and error_message:
+            params_hash = hashlib.md5(
+                json.dumps(params, sort_keys=True, default=str).encode()
+            ).hexdigest()[:12]
+            error_hash = hashlib.md5(error_message.encode()).hexdigest()[:12]
+            
+            record = FailureRecord(
+                tool=tool,
+                params_hash=params_hash,
+                error_hash=error_hash,
+            )
+            self._failure_history.append(record)
+            
+            # Trim history if needed
+            if len(self._failure_history) > self._max_history_size:
+                self._failure_history = self._failure_history[-self._max_history_size:]
+            
+            # Check for repeated failures (same tool + params + error)
+            self._check_repeated_failures(tool, params_hash, error_hash, error_message)
 
         if self._state == CircuitState.HALF_OPEN:
             # Any failure in half-open state reopens the circuit
@@ -110,6 +158,33 @@ class CircuitBreaker:
                     self._failure_count
                 )
                 self._state = CircuitState.OPEN
+    
+    def _check_repeated_failures(
+        self,
+        tool: str,
+        params_hash: str,
+        error_hash: str,
+        error_message: str,
+    ) -> None:
+        """Check if the same failure has occurred multiple times."""
+        # Look at recent failures (last 10)
+        recent = self._failure_history[-10:]
+        repeats = [
+            f for f in recent
+            if f.tool == tool
+            and f.params_hash == params_hash
+            and f.error_hash == error_hash
+        ]
+        
+        # If we've seen this exact failure 2+ times before (3+ total including current)
+        if len(repeats) >= 3:
+            logger.warning(
+                "Circuit breaker triggered by repeated failure: "
+                "tool=%s, repeats=%d, error=%s...",
+                tool, len(repeats), error_message[:50]
+            )
+            self._state = CircuitState.OPEN
+            self._last_failure_time = time.time()
 
     def execute(self, func: Callable[[], Any]) -> Any:
         """
@@ -139,6 +214,7 @@ class CircuitBreaker:
         except CircuitBreakerOpenError:
             raise
         except Exception as e:
+            # Simple record_failure without context (backward compatibility)
             self.record_failure()
             raise
 
@@ -159,6 +235,7 @@ class CircuitBreaker:
             "success_threshold": self._success_threshold,
             "timeout_seconds": self._timeout,
             "time_since_last_failure": self._get_time_since_last_failure(),
+            "failure_history_size": len(self._failure_history),
         }
 
     @property
@@ -208,6 +285,8 @@ __all__ = [
     "CircuitBreaker",
     "CircuitBreakerOpenError",
     "CircuitState",
+    "FailureRecord",
+    # Global singleton functions (kept for backward compatibility but not recommended for new code)
     "get_react_circuit_breaker",
     "reset_react_circuit_breaker",
 ]

@@ -392,50 +392,111 @@ def create_tool_class(jarvis_instance):
         return f"{Colors.ERROR} Unknown action: {action}"
 
     def _tool_run_python(params):
-        """Execute Python code in a sandboxed environment."""
+        """Execute Python code in a sandboxed subprocess environment."""
         code = params.get("code", "")
         timeout = int(params.get("timeout", 30))
 
         if not code:
             return f"{Colors.ERROR} Missing code"
 
-        # Security: block dangerous operations
+        # Security: block dangerous imports and operations
         dangerous_patterns = [
-            "import os", "import sys", "import subprocess",
-            "import socket", "import requests", "import httpx",
-            "import urllib", "open(", "write(", "exec(",
-            "eval(", "__import__", "compile(",
-            "os.", "sys.", "subprocess.", "socket.",
-            "eval(", "exec(", "compile(",
+            r"import\s+os",
+            r"import\s+sys",
+            r"import\s+subprocess",
+            r"import\s+socket",
+            r"import\s+requests",
+            r"import\s+httpx",
+            r"import\s+urllib",
+            r"import\s+importlib",
+            r"__import__",
+            r"eval\s*\(",
+            r"exec\s*\(",
+            r"compile\s*\(",
+            r"os\.[a-zA-Z_]+",
+            r"sys\.[a-zA-Z_]+",
+            r"subprocess\.[a-zA-Z_]+",
+            r"socket\.[a-zA-Z_]+",
         ]
-        code_lower = code.lower()
-        if any(d.lower() in code_lower for d in dangerous_patterns):
-            return f"{Colors.ERROR} Blocked: dangerous imports or operations not allowed"
+        import re
+        for pattern in dangerous_patterns:
+            if re.search(pattern, code, re.IGNORECASE):
+                logger.warning("Code interpreter blocked dangerous pattern: %s", pattern)
+                return f"{Colors.ERROR} Blocked: dangerous imports or operations not allowed (pattern: {pattern})"
 
-        # Capture stdout
-        import io
-        from contextlib import redirect_stdout, redirect_stderr
-
-        output = io.StringIO()
-        error_output = io.StringIO()
-
+        # Create workspace directory if it doesn't exist
+        workspace_dir = Path("jarvis_data/workspace")
         try:
-            with redirect_stdout(output), redirect_stderr(error_output):
-                exec(code, {"__builtins__": __builtins__})
-        except SyntaxError as e:
-            return f"{Colors.ERROR} Syntax Error: {e}"
+            workspace_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            error_text = error_output.getvalue()
-            return f"{Colors.ERROR} {type(e).__name__}: {e}\n{error_text}"
+            return f"{Colors.ERROR} Failed to create workspace: {e}"
 
-        result = output.getvalue()
-        error_text = error_output.getvalue()
+        # Generate unique script filename
+        script_id = uuid.uuid4().hex[:12]
+        script_path = workspace_dir / f"script_{script_id}.py"
 
-        if error_text:
-            return f"{Colors.WARNING} Output:\n{result}\n{Colors.ERROR} Errors:\n{error_text}"
-        if not result:
-            return f"{Colors.WARNING} No output"
-        return f"{Colors.INFO} Output:\n{result}"
+        # Write code to temporary file
+        try:
+            script_path.write_text(code, encoding="utf-8")
+        except Exception as e:
+            return f"{Colors.ERROR} Failed to write script: {e}"
+
+        logger.info("Code interpreter: executing script %s with timeout %ds", script_path.name, timeout)
+
+        # Prepare limited environment variables
+        limited_env = {
+            "PYTHONPATH": "",
+            "HOME": str(workspace_dir),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+        }
+
+        # Execute in isolated subprocess
+        try:
+            result = subprocess.run(
+                ["python3", str(script_path)],
+                capture_output=True,
+                text=True,
+                timeout=min(timeout, 120),  # Max 120 seconds
+                env=limited_env,
+                cwd=str(workspace_dir),
+            )
+
+            stdout = result.stdout
+            stderr = result.stderr
+
+            # Clean up script file
+            try:
+                script_path.unlink()
+            except Exception as e:
+                logger.debug("Failed to cleanup script file: %s", e)
+
+            if result.returncode != 0:
+                error_msg = stderr[:500] if stderr else f"Exit code: {result.returncode}"
+                return f"{Colors.ERROR} Execution error:\n{error_msg}"
+
+            if stderr:
+                return f"{Colors.WARNING} Output:\n{stdout}\n{Colors.ERROR} Stderr:\n{stderr}"
+            if not stdout:
+                return f"{Colors.WARNING} No output"
+            return f"{Colors.INFO} Output:\n{stdout}"
+
+        except subprocess.TimeoutExpired:
+            # Cleanup on timeout
+            try:
+                script_path.unlink()
+            except Exception:
+                pass
+            logger.warning("Code interpreter: script %s timed out after %ds", script_path.name, timeout)
+            return f"{Colors.ERROR} Execution timeout after {timeout} seconds"
+        except Exception as e:
+            # Cleanup on error
+            try:
+                script_path.unlink()
+            except Exception:
+                pass
+            logger.exception("Code interpreter: execution failed")
+            return f"{Colors.ERROR} Execution failed: {e}"
 
     return {
         "get_time": _tool_get_time,
