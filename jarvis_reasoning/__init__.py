@@ -19,7 +19,6 @@ from jarvis_config import (
 from jarvis_reasoning.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
-    get_react_circuit_breaker,
 )
 from jarvis_reasoning.context_summarizer import (
     ContextSummarizer,
@@ -312,7 +311,10 @@ class ReActLoop:
         self._max_iterations = max_iterations
         self._result_parser = ToolResultParser()
         self._verifier = Verifier(bridge)
-        self._circuit_breaker = get_react_circuit_breaker()
+        
+        # Create own Circuit Breaker instance (not singleton) for thread safety in swarm
+        self._circuit_breaker = CircuitBreaker()
+        logger.debug("ReActLoop initialized with dedicated Circuit Breaker instance")
         
         # Procedural Memory for learning from mistakes (Immortality)
         self._procedural = None
@@ -476,7 +478,26 @@ class ReActLoop:
             return f"❌ Chyba v ReAct loopu: {str(e)}"
 
     def _prefetch_context(self, query: str) -> str:
-        """Prefetch relevant context from memory."""
+        """Prefetch relevant context from memory including procedural rules."""
+        try:
+            # Use ContextPrefetcher for comprehensive context including procedural rules
+            from jarvis_reasoning.context_prefetch import ContextPrefetcher
+            
+            prefetcher = ContextPrefetcher(self._memory)
+            ctx_full = prefetcher.prefetch(query)
+            
+            # Log procedural rules if loaded
+            procedural_rules = ctx_full.get("procedural_rules", {})
+            if procedural_rules:
+                total_rules = sum(len(r) for r in procedural_rules.values())
+                logger.info("Loaded %d procedural rules for context from tools: %s",
+                           total_rules, list(procedural_rules.keys()))
+            
+            return ctx_full.get("summary", "")
+        except Exception as e:
+            logger.debug("Context prefetch failed: %s", e)
+        
+        # Fallback: simple recall
         try:
             results = self._memory.recall(query, k=5)
             if results:
@@ -487,7 +508,7 @@ class ReActLoop:
                         context_parts.append(f"• {content}")
                 return "\n".join(context_parts) if context_parts else ""
         except Exception as e:
-            logger.debug("Context prefetch failed: %s", e)
+            logger.debug("Fallback context fetch failed: %s", e)
         return ""
 
     def _generate_thought(self, query: str, context: str, observations: List[str], iteration: int = 1) -> str:
@@ -602,6 +623,12 @@ What action should I take? Return JSON with tool name and parameters."""
         if not success:
             error_msg = f"❌ {validated}"
             self._record_failure(tool_name, params, "parameter_error", validated)
+            # Record to circuit breaker with full context
+            self._circuit_breaker.record_failure(
+                tool=tool_name,
+                params=params,
+                error_message=f"parameter_error: {validated}",
+            )
             return error_msg
 
         # Get tool function
@@ -609,16 +636,39 @@ What action should I take? Return JSON with tool name and parameters."""
         if not tool_fn:
             error_msg = f"❌ Unknown tool: {tool_name}"
             self._record_failure(tool_name, params, "unknown_tool", error_msg)
+            # Record to circuit breaker with full context
+            self._circuit_breaker.record_failure(
+                tool=tool_name,
+                params=params,
+                error_message=f"unknown_tool: {tool_name}",
+            )
             return error_msg
 
         # Execute tool
         try:
             result = tool_fn(validated)
+            
+            # Parse error from result
+            error_info = self._result_parser.parse_error(result)
+            if error_info:
+                # Record failure with full context (including error message)
+                self._circuit_breaker.record_failure(
+                    tool=tool_name,
+                    params=validated,
+                    error_message=error_info.get("message", result[:200]),
+                )
+            
             return result if result else "⚠️ No output"
         except Exception as e:
             logger.exception("Tool execution failed: %s", tool_name)
             error_msg = f"❌ Error in {tool_name}: {str(e)}"
             self._record_failure(tool_name, params, "execution_error", str(e))
+            # Record to circuit breaker with full context
+            self._circuit_breaker.record_failure(
+                tool=tool_name,
+                params=params,
+                error_message=f"execution_error: {str(e)}",
+            )
             return error_msg
     
     def _record_failure(self, tool: str, params: Dict, error_type: str, error_message: str) -> None:
@@ -773,6 +823,8 @@ from jarvis_reasoning.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
     CircuitState,
+    FailureRecord,
+    # Global singleton functions (kept for backward compatibility)
     get_react_circuit_breaker,
     reset_react_circuit_breaker,
 )
@@ -805,6 +857,8 @@ __all__ = [
     "CircuitBreaker",
     "CircuitBreakerOpenError",
     "CircuitState",
+    "FailureRecord",
+    # Global singleton functions (kept for backward compatibility)
     "get_react_circuit_breaker",
     "reset_react_circuit_breaker",
     # Context Summarizer (Dynamic Context Compression)
