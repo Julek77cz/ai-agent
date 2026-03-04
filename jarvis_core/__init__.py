@@ -21,6 +21,7 @@ from jarvis_config import (
     SWARM_COMPLEXITY_THRESHOLD,
     SWARM_COMPLEXITY_INDICATORS,
 )
+from jarvis_config.dynamic import apply_hardware_scaling
 from jarvis_memory import CognitiveMemory
 from jarvis_tools import create_tool_class, TOOLS_SCHEMA, validate_tool_params
 from jarvis_reasoning import ReActLoop
@@ -139,6 +140,11 @@ class CzechBridgeClient:
 class JarvisV19:
     def __init__(self, streaming: bool = True):
         logger.info("Initializing JARVIS V19...")
+        hw_profile, swarm_agents, context_limit = apply_hardware_scaling()
+        logger.info(
+            "Hardware detekován: %s. Konfiguruji Swarm na %d agenty a Context limit na %d tokenů.",
+            hw_profile, swarm_agents, context_limit,
+        )
         self.streaming = streaming
         self.bridge = CzechBridgeClient()
         self.memory = CognitiveMemory(start_consolidation=True)
@@ -160,10 +166,10 @@ class JarvisV19:
                 bridge=self.bridge,
                 memory=self.memory,
                 tools=self.tools,
-                max_agents=SWARM_MAX_AGENTS,
+                max_agents=swarm_agents,
                 timeout_seconds=SWARM_TIMEOUT_SECONDS,
             )
-            logger.info("Swarm Manager initialized: max_agents=%d", SWARM_MAX_AGENTS)
+            logger.info("Swarm Manager initialized: max_agents=%d", swarm_agents)
 
         logger.info(f"Ready with {len(self.tools)} tools")
 
