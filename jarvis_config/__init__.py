@@ -12,6 +12,17 @@ FACTS_FILE = JARVIS_DATA_DIR / "memory" / "facts.json"
 CONV_FILE = JARVIS_DATA_DIR / "memory" / "conversations.json"
 TASKS_FILE = JARVIS_DATA_DIR / "tasks.json"
 
+# Write-Ahead Log (WAL) persistence
+WAL_DIR = JARVIS_DATA_DIR / "wal"
+WAL_FILE = WAL_DIR / "journal.jsonl"
+WAL_SNAPSHOT_FILE = WAL_DIR / "snapshot.json"
+
+# Procedural memory for learning from mistakes (Immortality)
+PROCEDURAL_DIR = JARVIS_DATA_DIR / "procedural"
+PROCEDURAL_FAILURES_FILE = PROCEDURAL_DIR / "failures.json"
+PROCEDURAL_RECOVERIES_FILE = PROCEDURAL_DIR / "recoveries.json"
+PROCEDURAL_PATTERNS_FILE = PROCEDURAL_DIR / "patterns.json"
+
 CHROMA_DIR = JARVIS_DATA_DIR / "chromadb"
 KG_FILE = JARVIS_DATA_DIR / "knowledge_graph" / "graph.json"
 
@@ -66,12 +77,25 @@ CONTEXT_MAX_OBSERVATIONS = 10  # Max observations to keep
 CONTEXT_MAX_RECENT_TURNS = 5  # Max recent conversation turns
 CONTEXT_ENABLE_LLM_SUMMARIZATION = True  # Use LLM for summarization
 
+# WAL (Write-Ahead Log) Configuration
+WAL_ENABLED = True
+WAL_FLUSH_INTERVAL_SECONDS = 5  # How often to flush to disk
+WAL_MAX_SIZE_MB = 50  # Max WAL size before rotation
+WAL_COMPRESSION = True  # Compress old WAL segments
+
+# Procedural Memory Configuration (Immortality - Learning from Mistakes)
+PROCEDURAL_MEMORY_ENABLED = True
+PROCEDURAL_MIN_FAILURE_COUNT = 2  # Minimum failures before pattern is recognized
+PROCEDURAL_PATTERN_CONFIDENCE_THRESHOLD = 0.7
+PROCEDURAL_MAX_RECOVERIES_STORED = 100
+PROCEDURAL_ANALYSIS_INTERVAL_MINUTES = 30
+
 SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you", "what can you do", "who are you", "jak se mas", "good morning", "good night", "thank you", "thanks", "diky", "dekuji", "super"]
 
 MEMORY_PATTERNS = ["what do you know about me", "co o me vis", "co vsechno o me", "what do you remember", "co si pamatujes", "my preferences", "tell me about myself", "co vis o me", "moje preference"]
 
 def ensure_data_dirs() -> None:
-    for subdir in ["memory", "orchestrator", "chromadb", "knowledge_graph"]:
+    for subdir in ["memory", "orchestrator", "chromadb", "knowledge_graph", "wal", "procedural"]:
         (JARVIS_DATA_DIR / subdir).mkdir(parents=True, exist_ok=True)
 
 ensure_data_dirs()

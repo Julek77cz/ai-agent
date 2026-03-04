@@ -295,6 +295,8 @@ class ReActLoop:
 
     Features Dynamic Context Compression to prevent token exhaustion
     during long reasoning chains.
+    
+    Also integrates with Procedural Memory for learning from mistakes (immortality).
     """
 
     def __init__(
@@ -311,6 +313,11 @@ class ReActLoop:
         self._result_parser = ToolResultParser()
         self._verifier = Verifier(bridge)
         self._circuit_breaker = get_react_circuit_breaker()
+        
+        # Procedural Memory for learning from mistakes (Immortality)
+        self._procedural = None
+        if hasattr(memory, '_procedural'):
+            self._procedural = memory._procedural
 
         # Initialize context summarizer for dynamic compression
         if CONTEXT_SUMMARIZER_ENABLED:
@@ -581,18 +588,28 @@ What action should I take? Return JSON with tool name and parameters."""
         return {"tool": "recall", "params": {"query": thought}, "parallel": False}
 
     def _execute_tool(self, tool_name: str, params: Dict) -> str:
-        """Execute a tool with parameter validation."""
+        """Execute a tool with parameter validation and error tracking."""
         from jarvis_tools import validate_tool_params
+
+        # Check for known failures from procedural memory (immortality feature)
+        if self._procedural:
+            known_issue = self._procedural.check_for_known_failure(tool_name, params)
+            if known_issue:
+                logger.info("Known failure detected for %s: %s", tool_name, known_issue.get("warning", ""))
 
         # Validate parameters
         success, validated = validate_tool_params(tool_name, params)
         if not success:
-            return f"❌ {validated}"
+            error_msg = f"❌ {validated}"
+            self._record_failure(tool_name, params, "parameter_error", validated)
+            return error_msg
 
         # Get tool function
         tool_fn = self._tools.get(tool_name)
         if not tool_fn:
-            return f"❌ Unknown tool: {tool_name}"
+            error_msg = f"❌ Unknown tool: {tool_name}"
+            self._record_failure(tool_name, params, "unknown_tool", error_msg)
+            return error_msg
 
         # Execute tool
         try:
@@ -600,7 +617,23 @@ What action should I take? Return JSON with tool name and parameters."""
             return result if result else "⚠️ No output"
         except Exception as e:
             logger.exception("Tool execution failed: %s", tool_name)
-            return f"❌ Error in {tool_name}: {str(e)}"
+            error_msg = f"❌ Error in {tool_name}: {str(e)}"
+            self._record_failure(tool_name, params, "execution_error", str(e))
+            return error_msg
+    
+    def _record_failure(self, tool: str, params: Dict, error_type: str, error_message: str) -> None:
+        """Record failure to procedural memory for learning."""
+        if self._procedural is not None:
+            try:
+                self._procedural.record_failure(
+                    tool=tool,
+                    params=params,
+                    error_type=error_type,
+                    error_message=error_message,
+                    context="react_loop",
+                )
+            except Exception as e:
+                logger.debug("Failed to record failure: %s", e)
 
     def _generate_reflection(
         self, query: str, observation: str, tool_success: bool, error_info: Optional[Dict]

@@ -1,0 +1,30 @@
+{
+  "checkpoint_id": "checkpoint-20260304_105211",
+  "timestamp": "2026-03-04T10:52:11.738530",
+  "state": {
+    "facts": {
+      "f6d1de427ee3": "User likes Python",
+      "c030bfdaabf8": "User prefers dark mode",
+      "5416eb24ae95": "Test fact for WAL"
+    },
+    "conversations": [
+      {
+        "role": "user",
+        "content": "Hello JARVIS"
+      },
+      {
+        "role": "assistant",
+        "content": "Hello! How can I help?"
+      },
+      {
+        "role": "user",
+        "content": "What is Python?"
+      },
+      {
+        "role": "assistant",
+        "content": "Python is a programming language."
+      }
+    ],
+    "entities": {}
+  }
+}
