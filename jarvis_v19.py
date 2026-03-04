@@ -12,16 +12,15 @@ class Colors:
     BLUE = "\033[94m"; MAGENTA = "\033[95m"; CYAN = "\033[96m"
 
 def banner():
-    reset = Colors.RESET
     print(f"""
-{CYAN}╔═══════════════════════════════════════════════════╗
+{Colors.CYAN}╔═══════════════════════════════════════════════════╗
            🤖 JARVIS V19 - AI Assistant          ║
   • Modular architecture                         ║
   • Czech language support                      ║
   • Local LLM (Ollama)                         ║
   • Semantic memory                            ║
   • Task Manager                              ║
-{reset}
+{Colors.RESET}
 """)
 
 def interactive(jarvis):
