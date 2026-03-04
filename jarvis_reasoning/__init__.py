@@ -9,6 +9,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from jarvis_config import MODELS, HW_OPTIONS, OLLAMA_URL, REACTION_MAX_ITERATIONS
+from jarvis_reasoning.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    get_react_circuit_breaker,
+)
 
 if TYPE_CHECKING:
     from jarvis_core import CzechBridgeClient
@@ -276,6 +281,7 @@ class ReActLoop:
         self._max_iterations = max_iterations
         self._result_parser = ToolResultParser()
         self._verifier = Verifier(bridge)
+        self._circuit_breaker = get_react_circuit_breaker()
 
     def run(self, query: str, stream_callback: Callable = None) -> str:
         """
@@ -290,6 +296,17 @@ class ReActLoop:
         """
         logger.info("Starting ReAct loop for query: %s", query[:50])
 
+        # Check circuit breaker before starting
+        if self._circuit_breaker.is_open:
+            logger.warning("Circuit breaker is OPEN - preventing ReAct execution")
+            status = self._circuit_breaker.get_status()
+            return (
+                f"⚠️ {Colors.RED}ReAct loop blocked by circuit breaker.{Colors.RESET}\n"
+                f"State: {status['state']} | Failures: {status['failure_count']} | "
+                f"Last failure: {status['time_since_last_failure']:.1f}s ago\n"
+                f"Zkoušejte později nebo restartujte JARVIS."
+            )
+
         # Prefetch context from memory
         context = self._prefetch_context(query)
 
@@ -301,85 +318,105 @@ class ReActLoop:
 
         final_answer = None
 
-        for iteration in range(1, self._max_iterations + 1):
-            logger.info("ReAct iteration %d/%d", iteration, self._max_iterations)
+        try:
+            for iteration in range(1, self._max_iterations + 1):
+                logger.info("ReAct iteration %d/%d", iteration, self._max_iterations)
 
-            # Thought generation
-            thought = self._generate_thought(query, context, observations)
-            thoughts.append(thought)
-            logger.debug("Thought: %s", thought[:100])
+                # Check circuit breaker at each iteration
+                if self._circuit_breaker.is_open:
+                    logger.warning("Circuit breaker opened during ReAct loop")
+                    break
 
-            # Action generation
-            action = self._generate_action(thought, context)
-            actions.append(action)
-            logger.info("Action: %s", action.get("tool", "unknown"))
+                # Thought generation
+                thought = self._generate_thought(query, context, observations)
+                thoughts.append(thought)
+                logger.debug("Thought: %s", thought[:100])
 
-            # Tool execution with validation
-            tool_name = action.get("tool", "")
-            params = action.get("params", {})
+                # Action generation
+                action = self._generate_action(thought, context)
+                actions.append(action)
+                logger.info("Action: %s", action.get("tool", "unknown"))
 
-            start_time = time.time()
-            observation = self._execute_tool(tool_name, params)
-            duration = time.time() - start_time
-            observations.append(observation)
+                # Tool execution with validation
+                tool_name = action.get("tool", "")
+                params = action.get("params", {})
 
-            # Parse result
-            tool_success = self._result_parser.is_success(observation)
-            error_info = self._result_parser.parse_error(observation)
+                start_time = time.time()
+                observation = self._execute_tool(tool_name, params)
+                duration = time.time() - start_time
+                observations.append(observation)
 
-            logger.info("Tool %s: success=%s, duration=%.2fs", tool_name, tool_success, duration)
+                # Parse result
+                tool_success = self._result_parser.is_success(observation)
+                error_info = self._result_parser.parse_error(observation)
 
-            # Reflection: should continue or answer?
-            reflection = self._generate_reflection(query, observation, tool_success, error_info)
+                logger.info("Tool %s: success=%s, duration=%.2fs", tool_name, tool_success, duration)
 
-            step = ReActStep(
-                iteration=iteration,
-                thought=thought,
-                action=action,
-                observation=observation,
-                reflection=reflection,
-                duration=duration,
-                tool_success=tool_success,
-            )
-            steps.append(step)
+                # Reflection: should continue or answer?
+                reflection = self._generate_reflection(query, observation, tool_success, error_info)
 
-            # Check if we should stop
-            if not self._should_continue(reflection):
-                logger.info("Reflection indicates task complete")
-                final_answer = self._generate_final_answer(query, context, observations)
-                break
-
-            # Self-correction if tool failed
-            if not tool_success and error_info:
-                correction_thought = self._generate_correction_thought(
-                    query, tool_name, params, error_info, observations
+                step = ReActStep(
+                    iteration=iteration,
+                    thought=thought,
+                    action=action,
+                    observation=observation,
+                    reflection=reflection,
+                    duration=duration,
+                    tool_success=tool_success,
                 )
-                thoughts.append(correction_thought)
-                logger.debug("Correction thought: %s", correction_thought[:100])
+                steps.append(step)
 
-        if final_answer is None:
-            # Max iterations reached - generate answer anyway
-            logger.warning("Max iterations reached, generating final answer")
-            final_answer = self._generate_final_answer(query, context, observations)
+                # Check if we should stop
+                if not self._should_continue(reflection):
+                    logger.info("Reflection indicates task complete")
+                    final_answer = self._generate_final_answer(query, context, observations)
+                    break
 
-        # Verification
-        verified, issues = self._verifier.verify(query, final_answer, "\n".join(observations))
+                # Self-correction if tool failed
+                if not tool_success and error_info:
+                    correction_thought = self._generate_correction_thought(
+                        query, tool_name, params, error_info, observations
+                    )
+                    thoughts.append(correction_thought)
+                    logger.debug("Correction thought: %s", correction_thought[:100])
 
-        if not verified:
-            logger.info("Verifier rejected answer, issues: %s", issues)
-            # Add feedback to observations and retry once
-            feedback_observation = f"VERIFICATION_FEEDBACK: {', '.join(issues)}"
-            observations.append(feedback_observation)
-            final_answer = self._generate_final_answer(query, context, observations)
+            if final_answer is None:
+                # Max iterations reached - generate answer anyway
+                logger.warning("Max iterations reached, generating final answer")
+                final_answer = self._generate_final_answer(query, context, observations)
+                # Record failure for circuit breaker
+                self._circuit_breaker.record_failure()
 
-        # Stream if callback provided
-        if stream_callback and final_answer:
-            stream_callback(final_answer)
+            # Verification
+            verified, issues = self._verifier.verify(query, final_answer, "\n".join(observations))
 
-        # Log structured summary
-        self._log_summary(query, steps, final_answer, verified)
+            if not verified:
+                logger.info("Verifier rejected answer, issues: %s", issues)
+                # Add feedback to observations and retry once
+                feedback_observation = f"VERIFICATION_FEEDBACK: {', '.join(issues)}"
+                observations.append(feedback_observation)
+                final_answer = self._generate_final_answer(query, context, observations)
+                # Record failure for circuit breaker
+                self._circuit_breaker.record_failure()
+            else:
+                # Record success for circuit breaker
+                self._circuit_breaker.record_success()
 
-        return final_answer
+            # Stream if callback provided
+            if stream_callback and final_answer:
+                stream_callback(final_answer)
+
+            # Log structured summary
+            self._log_summary(query, steps, final_answer, verified)
+
+            return final_answer
+
+        except Exception as e:
+            # Record failure for circuit breaker on any exception
+            logger.error("ReAct loop error: %s", e)
+            self._circuit_breaker.record_failure()
+            # Return error message instead of re-raising
+            return f"❌ Chyba v ReAct loopu: {str(e)}"
 
     def _prefetch_context(self, query: str) -> str:
         """Prefetch relevant context from memory."""
@@ -595,6 +632,13 @@ from jarvis_reasoning.engine import ReasoningEngine, ReActStep as EngineReActSte
 from jarvis_reasoning.context_prefetch import ContextPrefetcher
 from jarvis_reasoning.verifier import StepVerifier, VerificationResult
 from jarvis_reasoning.parallel_executor import ParallelToolExecutor
+from jarvis_reasoning.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    CircuitState,
+    get_react_circuit_breaker,
+    reset_react_circuit_breaker,
+)
 
 __all__ = [
     # New ReAct components
@@ -602,6 +646,12 @@ __all__ = [
     "Verifier",
     "ReActLoop",
     "ReActStep",
+    # Circuit Breaker
+    "CircuitBreaker",
+    "CircuitBreakerOpenError",
+    "CircuitState",
+    "get_react_circuit_breaker",
+    "reset_react_circuit_breaker",
     # Existing components (backward compatibility)
     "ReasoningEngine",
     "EngineReActStep",

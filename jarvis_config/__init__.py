@@ -51,6 +51,12 @@ REACTION_MAX_ITERATIONS = 10
 VERIFIER_ENABLED = True
 VERIFIER_THRESHOLD = 0.7
 
+# Circuit Breaker Configuration
+CIRCUIT_BREAKER_ENABLED = True
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+CIRCUIT_BREAKER_SUCCESS_THRESHOLD = 3
+CIRCUIT_BREAKER_TIMEOUT_SECONDS = 60
+
 SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you", "what can you do", "who are you", "jak se mas", "good morning", "good night", "thank you", "thanks", "diky", "dekuji", "super"]
 
 MEMORY_PATTERNS = ["what do you know about me", "co o me vis", "co vsechno o me", "what do you remember", "co si pamatujes", "my preferences", "tell me about myself", "co vis o me", "moje preference"]

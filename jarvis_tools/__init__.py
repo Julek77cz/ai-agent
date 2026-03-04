@@ -110,6 +110,12 @@ class ManageTasksParams(BaseModel):
     task_id: Optional[str] = Field(default=None, description="Task ID for remove action")
 
 
+class RunPythonParams(BaseModel):
+    """Parameters for run_python tool."""
+    code: str = Field(..., description="Python code to execute")
+    timeout: int = Field(default=30, ge=1, le=120, description="Execution timeout in seconds (max 120)")
+
+
 # ============================================================================
 # Tool schemas mapping
 # ============================================================================
@@ -128,6 +134,7 @@ TOOL_SCHEMAS: Dict[str, type[BaseModel]] = {
     "list_dir": ListDirParams,
     "system_info": SystemInfoParams,
     "manage_tasks": ManageTasksParams,
+    "run_python": RunPythonParams,
 }
 
 
@@ -384,6 +391,52 @@ def create_tool_class(jarvis_instance):
 
         return f"{Colors.ERROR} Unknown action: {action}"
 
+    def _tool_run_python(params):
+        """Execute Python code in a sandboxed environment."""
+        code = params.get("code", "")
+        timeout = int(params.get("timeout", 30))
+
+        if not code:
+            return f"{Colors.ERROR} Missing code"
+
+        # Security: block dangerous operations
+        dangerous_patterns = [
+            "import os", "import sys", "import subprocess",
+            "import socket", "import requests", "import httpx",
+            "import urllib", "open(", "write(", "exec(",
+            "eval(", "__import__", "compile(",
+            "os.", "sys.", "subprocess.", "socket.",
+            "eval(", "exec(", "compile(",
+        ]
+        code_lower = code.lower()
+        if any(d.lower() in code_lower for d in dangerous_patterns):
+            return f"{Colors.ERROR} Blocked: dangerous imports or operations not allowed"
+
+        # Capture stdout
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        output = io.StringIO()
+        error_output = io.StringIO()
+
+        try:
+            with redirect_stdout(output), redirect_stderr(error_output):
+                exec(code, {"__builtins__": __builtins__})
+        except SyntaxError as e:
+            return f"{Colors.ERROR} Syntax Error: {e}"
+        except Exception as e:
+            error_text = error_output.getvalue()
+            return f"{Colors.ERROR} {type(e).__name__}: {e}\n{error_text}"
+
+        result = output.getvalue()
+        error_text = error_output.getvalue()
+
+        if error_text:
+            return f"{Colors.WARNING} Output:\n{result}\n{Colors.ERROR} Errors:\n{error_text}"
+        if not result:
+            return f"{Colors.WARNING} No output"
+        return f"{Colors.INFO} Output:\n{result}"
+
     return {
         "get_time": _tool_get_time,
         "open_app": _tool_open_app,
@@ -398,6 +451,7 @@ def create_tool_class(jarvis_instance):
         "list_dir": _tool_list_dir,
         "system_info": _tool_system_info,
         "manage_tasks": _tool_manage_tasks,
+        "run_python": _tool_run_python,
     }
 
 
@@ -407,6 +461,7 @@ RULE: For memory queries → recall tool
 RULE: For storing facts → remember tool
 RULE: For removing memories → forget tool
 RULE: For task management → manage_tasks tool
+RULE: For Python code execution → run_python tool
 
 Tools:
   get_time
@@ -424,6 +479,7 @@ Tools:
   system_info
   manage_tasks    (action, task_description, task_id)
     action: "add" | "list" | "remove"
+  run_python      (code, timeout)
 """
 
 __all__ = [
@@ -445,4 +501,5 @@ __all__ = [
     "ListDirParams",
     "SystemInfoParams",
     "ManageTasksParams",
+    "RunPythonParams",
 ]
