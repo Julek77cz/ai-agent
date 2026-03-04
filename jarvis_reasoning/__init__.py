@@ -1,6 +1,7 @@
 """JARVIS Advanced ReAct Reasoning Engine
 
 Implements iterative ReAct pattern: Thought → Action → Observation → Reflection
+with Dynamic Context Compression to prevent token exhaustion.
 """
 import logging
 import re
@@ -8,11 +9,23 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-from jarvis_config import MODELS, HW_OPTIONS, OLLAMA_URL, REACTION_MAX_ITERATIONS
+from jarvis_config import (
+    MODELS, HW_OPTIONS, OLLAMA_URL, REACTION_MAX_ITERATIONS,
+    CONTEXT_SUMMARIZER_ENABLED, CONTEXT_SOFT_LIMIT_TOKENS,
+    CONTEXT_MEDIUM_LIMIT_TOKENS, CONTEXT_HARD_LIMIT_TOKENS,
+    CONTEXT_MAX_OBSERVATIONS, CONTEXT_MAX_RECENT_TURNS,
+    CONTEXT_ENABLE_LLM_SUMMARIZATION,
+)
 from jarvis_reasoning.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerOpenError,
     get_react_circuit_breaker,
+)
+from jarvis_reasoning.context_summarizer import (
+    ContextSummarizer,
+    SimpleContextSummarizer,
+    ContextSegment,
+    CompressionStats,
 )
 
 if TYPE_CHECKING:
@@ -20,6 +33,19 @@ if TYPE_CHECKING:
     from jarvis_memory.memory_manager import CognitiveMemory
 
 logger = logging.getLogger("JARVIS.REASONING")
+
+
+# ANSI color codes for terminal output
+class Colors:
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    RESET = '\033[0m'
+
 
 # ============================================================================
 # Tool Result Parser
@@ -266,6 +292,9 @@ class ReActLoop:
 
     The loop follows: Thought → Action → Observation → Reflection
     with support for error recovery, self-correction, and verification.
+
+    Features Dynamic Context Compression to prevent token exhaustion
+    during long reasoning chains.
     """
 
     def __init__(
@@ -282,6 +311,27 @@ class ReActLoop:
         self._result_parser = ToolResultParser()
         self._verifier = Verifier(bridge)
         self._circuit_breaker = get_react_circuit_breaker()
+
+        # Initialize context summarizer for dynamic compression
+        if CONTEXT_SUMMARIZER_ENABLED:
+            if CONTEXT_ENABLE_LLM_SUMMARIZATION:
+                self._summarizer = ContextSummarizer(
+                    bridge=bridge,
+                    soft_limit=CONTEXT_SOFT_LIMIT_TOKENS,
+                    medium_limit=CONTEXT_MEDIUM_LIMIT_TOKENS,
+                    hard_limit=CONTEXT_HARD_LIMIT_TOKENS,
+                    max_observations=CONTEXT_MAX_OBSERVATIONS,
+                    max_recent_turns=CONTEXT_MAX_RECENT_TURNS,
+                    enable_summarization=True,
+                )
+            else:
+                self._summarizer = SimpleContextSummarizer(
+                    soft_limit=CONTEXT_SOFT_LIMIT_TOKENS,
+                    hard_limit=CONTEXT_HARD_LIMIT_TOKENS,
+                    max_observations=CONTEXT_MAX_OBSERVATIONS,
+                )
+        else:
+            self._summarizer = None
 
     def run(self, query: str, stream_callback: Callable = None) -> str:
         """
@@ -327,8 +377,8 @@ class ReActLoop:
                     logger.warning("Circuit breaker opened during ReAct loop")
                     break
 
-                # Thought generation
-                thought = self._generate_thought(query, context, observations)
+                # Thought generation with dynamic context compression
+                thought = self._generate_thought(query, context, observations, iteration)
                 thoughts.append(thought)
                 logger.debug("Thought: %s", thought[:100])
 
@@ -369,7 +419,7 @@ class ReActLoop:
                 # Check if we should stop
                 if not self._should_continue(reflection):
                     logger.info("Reflection indicates task complete")
-                    final_answer = self._generate_final_answer(query, context, observations)
+                    final_answer = self._generate_final_answer(query, context, observations, thoughts)
                     break
 
                 # Self-correction if tool failed
@@ -383,7 +433,7 @@ class ReActLoop:
             if final_answer is None:
                 # Max iterations reached - generate answer anyway
                 logger.warning("Max iterations reached, generating final answer")
-                final_answer = self._generate_final_answer(query, context, observations)
+                final_answer = self._generate_final_answer(query, context, observations, thoughts)
                 # Record failure for circuit breaker
                 self._circuit_breaker.record_failure()
 
@@ -395,7 +445,7 @@ class ReActLoop:
                 # Add feedback to observations and retry once
                 feedback_observation = f"VERIFICATION_FEEDBACK: {', '.join(issues)}"
                 observations.append(feedback_observation)
-                final_answer = self._generate_final_answer(query, context, observations)
+                final_answer = self._generate_final_answer(query, context, observations, thoughts)
                 # Record failure for circuit breaker
                 self._circuit_breaker.record_failure()
             else:
@@ -433,19 +483,46 @@ class ReActLoop:
             logger.debug("Context prefetch failed: %s", e)
         return ""
 
-    def _generate_thought(self, query: str, context: str, observations: List[str]) -> str:
-        """Generate reasoning thought for current state."""
+    def _generate_thought(self, query: str, context: str, observations: List[str], iteration: int = 1) -> str:
+        """Generate reasoning thought for current state with dynamic context compression."""
         system_prompt = (
             "You are JARVIS, an AI assistant. Think step by step about how to solve "
             "the user's query. Return ONLY your thought as plain text, no JSON."
         )
+
+        # Apply dynamic context compression if enabled
+        if self._summarizer is not None:
+            if isinstance(self._summarizer, ContextSummarizer):
+                # Create segments from context and observations
+                segments = self._summarizer.create_react_segments(
+                    context_str=context,
+                    observations=observations,
+                    thoughts=[],  # No previous thoughts for thought generation
+                )
+                compressed_context, stats = self._summarizer.summarize_for_iteration(
+                    query=query,
+                    context_segments=segments,
+                    current_iteration=iteration,
+                )
+                if stats.compression_level > 0:
+                    logger.debug(
+                        "Context compressed for iteration %d: %d -> %d tokens (level %d)",
+                        iteration, stats.original_tokens, stats.compressed_tokens, stats.compression_level
+                    )
+                context = compressed_context
+            else:
+                # Simple summarizer
+                context = self._summarizer.summarize(
+                    context_parts=[context] if context else [],
+                    observations=observations,
+                )
 
         obs_text = "\n".join(f"- {o[:200]}" for o in observations[-3:]) if observations else "No observations yet."
 
         prompt = f"""Query: {query}
 
 Context from memory:
-{context[:500] if context else "None"}
+{context[:1500] if context else "None"}
 
 Previous observations:
 {obs_text}
@@ -574,19 +651,46 @@ What action should I take? Return JSON with tool name and parameters."""
             f"Original query: {query}"
         )
 
-    def _generate_final_answer(self, query: str, context: str, observations: List[str]) -> str:
-        """Generate final answer from observations."""
+    def _generate_final_answer(self, query: str, context: str, observations: List[str], thoughts: List[str] = None) -> str:
+        """Generate final answer from observations with dynamic context compression."""
         system_prompt = (
             "You are JARVIS, a helpful AI assistant. Synthesize a clear, concise answer "
             "in Czech based on the execution results. Be direct and helpful."
         )
+
+        thoughts = thoughts or []
+
+        # Apply dynamic context compression if enabled
+        if self._summarizer is not None:
+            if isinstance(self._summarizer, ContextSummarizer):
+                segments = self._summarizer.create_react_segments(
+                    context_str=context,
+                    observations=observations,
+                    thoughts=thoughts,
+                )
+                compressed_context, stats = self._summarizer.summarize_for_iteration(
+                    query=query,
+                    context_segments=segments,
+                    current_iteration=self._max_iterations,
+                )
+                if stats.compression_level > 0:
+                    logger.debug(
+                        "Final context compressed: %d -> %d tokens (level %d)",
+                        stats.original_tokens, stats.compressed_tokens, stats.compression_level
+                    )
+                context = compressed_context
+            else:
+                context = self._summarizer.summarize(
+                    context_parts=[context] if context else [],
+                    observations=observations,
+                )
 
         obs_summary = "\n\n".join(f"Step {i+1}: {o[:300]}" for i, o in enumerate(observations[-5:]))
 
         prompt = f"""Original query: {query}
 
 Context from memory:
-{context[:300] if context else "None"}
+{context[:1500] if context else "None"}
 
 Execution results:
 {obs_summary}
@@ -652,6 +756,11 @@ __all__ = [
     "CircuitState",
     "get_react_circuit_breaker",
     "reset_react_circuit_breaker",
+    # Context Summarizer (Dynamic Context Compression)
+    "ContextSummarizer",
+    "SimpleContextSummarizer",
+    "ContextSegment",
+    "CompressionStats",
     # Existing components (backward compatibility)
     "ReasoningEngine",
     "EngineReActStep",

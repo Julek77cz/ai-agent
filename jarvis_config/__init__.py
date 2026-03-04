@@ -57,6 +57,15 @@ CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
 CIRCUIT_BREAKER_SUCCESS_THRESHOLD = 3
 CIRCUIT_BREAKER_TIMEOUT_SECONDS = 60
 
+# Context Summarizer Configuration (Dynamic Context Compression)
+CONTEXT_SUMMARIZER_ENABLED = True
+CONTEXT_SOFT_LIMIT_TOKENS = 2048  # Start light compression
+CONTEXT_MEDIUM_LIMIT_TOKENS = 3072  # Medium compression
+CONTEXT_HARD_LIMIT_TOKENS = 4096  # Aggressive compression
+CONTEXT_MAX_OBSERVATIONS = 10  # Max observations to keep
+CONTEXT_MAX_RECENT_TURNS = 5  # Max recent conversation turns
+CONTEXT_ENABLE_LLM_SUMMARIZATION = True  # Use LLM for summarization
+
 SMALLTALK_PATTERNS = ["ahoj", "hello", "hi", "hey", "cau", "zdar", "how are you", "what can you do", "who are you", "jak se mas", "good morning", "good night", "thank you", "thanks", "diky", "dekuji", "super"]
 
 MEMORY_PATTERNS = ["what do you know about me", "co o me vis", "co vsechno o me", "what do you remember", "co si pamatujes", "my preferences", "tell me about myself", "co vis o me", "moje preference"]
