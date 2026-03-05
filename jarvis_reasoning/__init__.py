@@ -574,6 +574,7 @@ What should I do next? Think about the best approach."""
         """Generate action based on thought."""
         system_prompt = (
             "You are JARVIS, an AI assistant. Based on your thought, select the best tool action.\n\n"
+            "CRITICAL PRIORITY: If the user asks about their personal data, past instructions, passwords, names, or any context from the current or previous sessions, you MUST ALWAYS use the 'recall' tool first to check your memory. DO NOT use 'web_search' for personal or session-related questions!\n\n"
             "CRITICAL INSTRUCTION FOR TOOL USAGE: When outputting an Action, you MUST output the "
             "parameters as a valid JSON object immediately following the action name, like this:\n"
             'Action: tool_name {\\"param1\\": \\"value1\\", \\"param2\\": \\"value2\\"}\n\n'
