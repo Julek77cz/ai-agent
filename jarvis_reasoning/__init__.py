@@ -585,8 +585,35 @@ What should I do next? Think about the best approach."""
             '  "params": {"param1": "value1", "param2": "value2"},\n'
             '  "parallel": false\n'
             '}\n\n'
+            "=== TOOL EXAMPLES ===\n"
+            "1. RECALL (search memory):\n"
+            '   {\"tool\": \"recall\", \"params\": {\"query\": \"user preferences\"}, \"parallel\": false}\n\n'
+            "2. REMEMBER (store fact):\n"
+            '   {\"tool\": \"remember\", \"params\": {\"content\": \"User likes coffee\", \"fact_type\": \"preference\", \"confidence\": 1.0}, \"parallel\": false}\n\n'
+            "3. FORGET (remove memory):\n"
+            '   {\"tool\": \"forget\", \"params\": {\"fact_id\": \"abc123\"}, \"parallel\": false}\n\n'
+            "4. WEB_SEARCH (online search):\n"
+            '   {\"tool\": \"web_search\", \"params\": {\"query\": \"weather in Prague\"}, \"parallel\": false}\n\n'
+            "5. READ_FILE (read file):\n"
+            '   {\"tool\": \"read_file\", \"params\": {\"file_path\": \"document.txt\"}, \"parallel\": false}\n\n'
+            "6. WRITE_FILE (write file):\n"
+            '   {\"tool\": \"write_file\", \"params\": {\"file_path\": \"output.txt\", \"content\": \"Hello World\"}, \"parallel\": false}\n\n'
+            "7. RUN_PYTHON (execute code):\n"
+            '   {\"tool\": \"run_python\", \"params\": {\"code\": \"print(2+2)\"}, \"parallel\": false}\n\n'
+            "8. MANAGE_TASKS (task management):\n"
+            '   {\"tool\": \"manage_tasks\", \"params\": {\"action\": \"add\", \"task_description\": \"Buy milk\"}, \"parallel\": false}\n\n'
+            "9. GET_TIME (current time):\n"
+            '   {\"tool\": \"get_time\", \"params\": {}, \"parallel\": false}\n\n'
+            "10. SYSTEM_INFO (system status):\n"
+            '    {\"tool\": \"system_info\", \"params\": {}, \"parallel\": false}\n\n'
+            "=== PARAMETER RULES ===\n"
+            "- Required params MUST be included in the JSON\n"
+            "- Optional params can be omitted\n"
+            "- fact_type: 'preference', 'fact', 'event', or 'observation'\n"
+            "- action: 'add', 'list', or 'remove'\n"
+            "- confidence: 0.0 to 1.0\n\n"
             "Available tools: get_time, open_app, close_app, run_command, web_search, "
-            "write_file, read_file, recall, remember, forget, list_dir, system_info, manage_tasks"
+            "write_file, read_file, recall, remember, forget, list_dir, system_info, manage_tasks, run_python"
         )
 
         prompt = f"""Thought: {thought}
@@ -606,11 +633,18 @@ What action should I take? Return JSON with tool name and parameters."""
                 tool_name = result.get("tool", "")
                 params = result.get("params", {})
 
-                # Fallback: if params empty but tool requires them, generate from thought
-                if not params and tool_name in ["recall", "remember", "forget", "web_search", "read_file", "write_file"]:
-                    # Extract query/content from thought
-                    params = self._extract_params_from_thought(tool_name, thought)
-                    logger.warning("Planner missing params for %s, extracted: %s", tool_name, params)
+                # Check if parameters are missing or incomplete
+                has_required = self._has_required_params(tool_name, params)
+                
+                if not has_required:
+                    # Use enhanced fallback to extract missing parameters from thought
+                    enhanced = self._enhance_action_with_fallback(result, thought)
+                    logger.warning(
+                        "Planner returned incomplete params for %s, enhanced from thought. "
+                        "Original: %s, Enhanced: %s",
+                        tool_name, params, enhanced.get("params", {})
+                    )
+                    return enhanced
 
                 return {
                     "tool": tool_name,
@@ -624,42 +658,282 @@ What action should I take? Return JSON with tool name and parameters."""
         fallback_tool = self._extract_tool_from_thought(thought)
         if fallback_tool:
             params = self._extract_params_from_thought(fallback_tool, thought)
-            return {"tool": fallback_tool, "params": params, "parallel": False}
+            # Validate that we have required params
+            if self._has_required_params(fallback_tool, params):
+                logger.info("Using fallback tool extraction: %s with params: %s", fallback_tool, params)
+                return {"tool": fallback_tool, "params": params, "parallel": False}
+            else:
+                logger.warning("Fallback extraction missing required params for %s: %s", fallback_tool, params)
 
+        # Ultimate fallback: recall with thought as query
+        logger.info("Using ultimate fallback: recall with thought as query")
         return {"tool": "recall", "params": {"query": thought[:100]}, "parallel": False}
 
     def _extract_params_from_thought(self, tool_name: str, thought: str) -> Dict[str, Any]:
-        """Extract parameters from thought text when model fails to provide them."""
+        """
+        Extract parameters from thought text when model fails to provide them.
+        Uses regex patterns to intelligently infer parameters from the thought content.
+        """
+        thought_lower = thought.lower()
+        
         if tool_name == "recall":
+            # Look for quoted strings (likely the search query)
+            quoted_match = re.search(r'["\']([^"\']+)["\']', thought)
+            if quoted_match:
+                return {"query": quoted_match.group(1)}
+            # Look for question patterns
+            question_match = re.search(r'(?:about|regarding|on|concerning)\s+(.+?)(?:\?|$|\.)', thought_lower)
+            if question_match:
+                return {"query": question_match.group(1).strip()}
+            # Look for keywords indicating memory search
+            memory_keywords = ["remember", "recall", "memory", "know", "stored"]
+            for keyword in memory_keywords:
+                if keyword in thought_lower:
+                    # Extract words after the keyword
+                    after_keyword = thought_lower.split(keyword, 1)[-1].strip()
+                    if after_keyword and len(after_keyword) > 3:
+                        return {"query": after_keyword[:100]}
+            # Default: use entire thought
             return {"query": thought[:100]}
+            
         elif tool_name == "remember":
-            return {"content": thought[:500], "fact_type": "observation"}
+            content = None
+            fact_type = "observation"
+            
+            # Try to extract content after "remember" or similar
+            remember_patterns = [
+                r'["\']([^"\']+)["\']',  # Quoted content
+                r'(?:remember|store|save|note)\s+(?:that\s+)?(.+?)(?:\.|$)',  # After action verbs
+            ]
+            for pattern in remember_patterns:
+                match = re.search(pattern, thought, re.IGNORECASE)
+                if match:
+                    content = match.group(1).strip()
+                    break
+            
+            if not content:
+                content = thought[:500]
+            
+            # Detect fact_type from keywords
+            if any(kw in thought_lower for kw in ["like", "prefer", "favorite", "enjoy", "mám rád", "rád", "oblíbené"]):
+                fact_type = "preference"
+            elif any(kw in thought_lower for kw in ["event", "happened", "occurred", "meeting", "appointment", "událost"]):
+                fact_type = "event"
+            elif any(kw in thought_lower for kw in ["is", "are", "was", "were", "fact", "skutečnost"]):
+                fact_type = "fact"
+            
+            return {"content": content, "fact_type": fact_type, "confidence": 1.0}
+            
+        elif tool_name == "forget":
+            # Try to extract fact_id from various patterns
+            id_patterns = [
+                r'fact_id["\']?\s*[=:]\s*["\']?([a-f0-9\-]+)',
+                r'["\']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})["\']?',
+                r'["\']?([a-f0-9]{8,32})["\']?',
+                r'id["\']?\s*[=:]\s*["\']?([a-zA-Z0-9\-]+)',
+            ]
+            for pattern in id_patterns:
+                match = re.search(pattern, thought)
+                if match:
+                    return {"fact_id": match.group(1)}
+            # If we can't extract ID, return empty to trigger validation error
+            return {"fact_id": ""}
+            
         elif tool_name == "web_search":
+            # Look for quoted strings (likely search terms)
+            quoted_match = re.search(r'["\']([^"\']+)["\']', thought)
+            if quoted_match:
+                return {"query": quoted_match.group(1)}
+            # Look for "search for" or "look up" patterns
+            search_patterns = [
+                r'(?:search for|look up|find|vyhledej|hledej)\s+(.+?)(?:\?|$|\.|on the|using)',
+            ]
+            for pattern in search_patterns:
+                match = re.search(pattern, thought, re.IGNORECASE)
+                if match:
+                    return {"query": match.group(1).strip()}
+            # Default: use entire thought
             return {"query": thought[:100]}
+            
         elif tool_name in ["read_file", "write_file"]:
-            # Try to extract path from thought
-            path_match = re.search(r'["\'](.+?\.(txt|md|json|py))["\']', thought)
+            # Try multiple patterns for file paths
+            path_patterns = [
+                r'["\']([^"\']+\.(?:txt|md|json|py|csv|yaml|yml|log))["\']',
+                r'(?:file|soubor)\s+["\']?([^"\']+\.(?:txt|md|json|py|csv))["\']?',
+                r'["\']([^"\']+/[^"\']+)["\']',
+            ]
+            for pattern in path_patterns:
+                match = re.search(pattern, thought)
+                if match:
+                    return {"file_path": match.group(1)}
+            # Default fallback
+            return {"file_path": "output.txt"}
+            
+        elif tool_name == "manage_tasks":
+            action = "list"
+            task_description = None
+            task_id = None
+            
+            # Detect action
+            if any(kw in thought_lower for kw in ["add", "create", "new", "přidej", "vytvoř"]):
+                action = "add"
+            elif any(kw in thought_lower for kw in ["remove", "delete", "complete", "smazat", "odstraň"]):
+                action = "remove"
+            elif any(kw in thought_lower for kw in ["list", "show", "display", "zobraz", "ukaž"]):
+                action = "list"
+            
+            # Extract task description
+            desc_patterns = [
+                r'["\']([^"\']+)["\']',
+                r'(?:task|úkol|todo)\s*:?\s*(.+?)(?:\.|$|\n)',
+                r'(?:add|přidej)\s+(.+?)(?:\.|$|\n)',
+            ]
+            for pattern in desc_patterns:
+                match = re.search(pattern, thought, re.IGNORECASE)
+                if match:
+                    task_description = match.group(1).strip()
+                    break
+            
+            # Extract task ID for removal
+            id_match = re.search(r'task[_\-]?id["\']?\s*[=:]?\s*["\']?([a-zA-Z0-9\-]+)', thought_lower)
+            if id_match:
+                task_id = id_match.group(1)
+            
+            result = {"action": action}
+            if task_description:
+                result["task_description"] = task_description
+            if task_id:
+                result["task_id"] = task_id
+            return result
+            
+        elif tool_name == "run_python":
+            # Try to extract code between backticks or quotes
+            code_patterns = [
+                r'```python\s*\n(.*?)\n```',
+                r'```\s*\n(.*?)\n```',
+                r'`([^`]+)`',
+            ]
+            for pattern in code_patterns:
+                match = re.search(pattern, thought, re.DOTALL)
+                if match:
+                    return {"code": match.group(1).strip()}
+            # If no code block found, return empty
+            return {"code": ""}
+            
+        elif tool_name == "open_app":
+            # Extract app name
+            app_patterns = [
+                r'["\']([^"\']+)["\']',
+                r'(?:open|spusť|otevři)\s+(.+?)(?:\.|$|\n)',
+            ]
+            for pattern in app_patterns:
+                match = re.search(pattern, thought, re.IGNORECASE)
+                if match:
+                    return {"app_name": match.group(1).strip()}
+            return {"app_name": ""}
+            
+        elif tool_name == "run_command":
+            # Extract command
+            cmd_patterns = [
+                r'`([^`]+)`',
+                r'["\']([^"\']+)["\']',
+                r'(?:command|příkaz)\s*:?\s*(.+?)(?:\.|$|\n)',
+            ]
+            for pattern in cmd_patterns:
+                match = re.search(pattern, thought, re.IGNORECASE)
+                if match:
+                    return {"command": match.group(1).strip()}
+            return {"command": ""}
+            
+        elif tool_name == "list_dir":
+            # Try to extract path
+            path_match = re.search(r'["\']([^"\']+)["\']', thought)
             if path_match:
-                return {"file_path": path_match.group(1)}
-            return {"file_path": "output.txt"}  # fallback
+                return {"path": path_match.group(1)}
+            return {"path": "."}
+            
         return {}
 
     def _extract_tool_from_thought(self, thought: str) -> Optional[str]:
         """Extract tool name from thought text based on keywords."""
         thought_lower = thought.lower()
-        tool_keywords = {
-            "recall": ["remember", "recall", "memory", "past", "previous"],
-            "web_search": ["search", "look up", "find online", "google", "internet"],
-            "read_file": ["read file", "open file", "load file", "file content"],
-            "write_file": ["write file", "save file", "create file", "store file"],
-            "get_time": ["time", "current time", "what time", "clock"],
-            "system_info": ["system", "cpu", "memory", "resources"],
-            "list_dir": ["list directory", "show files", "folder contents"],
-        }
-        for tool, keywords in tool_keywords.items():
+        # Order matters: more specific/longer patterns should come first
+        tool_keywords = [
+            ("remember", ["remember that", "zapamatuj si", "store this"]),
+            ("recall", ["what do i recall", "i recall", "recall ", "what do you recall", "what do i remember about", "what do you remember about"]),
+            ("web_search", ["search for", "look up", "find online", "google", "internet", "vyhledej", "hledej"]),
+            ("read_file", ["read file", "open file", "load file", "file content", "přečti soubor"]),
+            ("write_file", ["write file", "save file", "create file", "store file", "vytvoř soubor", "zapiš", "write this", "save this", "to a file"]),
+            ("get_time", ["current time", "what time", "time is it", "clock", "kolik je hodin", "čas"]),
+            ("system_info", ["system info", "system resources", "cpu usage", "memory usage", "stav systému"]),
+            ("list_dir", ["list directory", "show files", "folder contents", "directory contents", "zobraz soubory"]),
+            ("manage_tasks", ["task list", "todo list", "úkol", "přidej úkol"]),
+            ("run_python", ["run python", "execute python", "python code", "spusť kód"]),
+            # Fallback patterns (shorter/more general)
+            ("recall", ["remember", "memory", "past", "previous", "know about", "what do you know"]),
+            ("get_time", ["time"]),
+            ("system_info", ["system", "cpu", "memory", "resources"]),
+            ("manage_tasks", ["task", "todo"]),
+            ("run_python", ["python", "code", "execute"]),
+        ]
+        for tool, keywords in tool_keywords:
             if any(keyword in thought_lower for keyword in keywords):
                 return tool
         return None
+
+    def _enhance_action_with_fallback(self, action: Dict[str, Any], thought: str) -> Dict[str, Any]:
+        """
+        Enhance an action with fallback parameter extraction.
+        Called when LLM returns incomplete or missing parameters.
+        """
+        tool_name = action.get("tool", "")
+        params = action.get("params", {})
+        
+        if not tool_name:
+            return action
+        
+        # Check if params are missing or empty for tools that require them
+        extracted_params = self._extract_params_from_thought(tool_name, thought)
+        
+        # Merge: LLM params take precedence, but fill in missing ones
+        merged_params = {**extracted_params, **params}
+        
+        # If merged_params is still empty but tool requires params, log warning
+        if not merged_params and tool_name not in ["get_time", "system_info"]:
+            logger.warning("Could not extract params for tool %s from thought: %s", tool_name, thought[:100])
+        
+        return {
+            "tool": tool_name,
+            "params": merged_params,
+            "parallel": action.get("parallel", False),
+        }
+
+    def _get_tool_required_params(self, tool_name: str) -> List[str]:
+        """Get list of required parameters for a tool."""
+        required_params = {
+            "recall": ["query"],
+            "remember": ["content"],
+            "forget": ["fact_id"],
+            "web_search": ["query"],
+            "read_file": ["file_path"],
+            "write_file": ["file_path", "content"],
+            "open_app": ["app_name"],
+            "close_app": ["app_name"],
+            "run_command": ["command"],
+            "run_python": ["code"],
+            "manage_tasks": ["action"],
+            "list_dir": [],  # path has default
+            "get_time": [],
+            "system_info": [],
+        }
+        return required_params.get(tool_name, [])
+
+    def _has_required_params(self, tool_name: str, params: Dict[str, Any]) -> bool:
+        """Check if action has all required parameters."""
+        required = self._get_tool_required_params(tool_name)
+        if not required:
+            return True
+        return all(param in params and params[param] for param in required)
 
     def _execute_tool(self, tool_name: str, params: Dict) -> str:
         """Execute a tool with parameter validation and error tracking."""
