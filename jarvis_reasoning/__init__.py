@@ -570,9 +570,52 @@ What should I do next? Think about the best approach."""
 
         return f"Analyzing query: {query}"
 
+    def _is_memory_query(self, thought: str) -> bool:
+        """
+        Detect if the thought is a memory query using semantic routing.
+        Checks for Czech and English keywords indicating memory-related queries.
+
+        Args:
+            thought: The thought text to analyze
+
+        Returns:
+            True if this is a memory query, False otherwise
+        """
+        thought_lower = thought.lower()
+
+        # Czech memory keywords
+        czech_keywords = [
+            "pamatuješ", "pamatuj", "pamatuje", "si", "nám", "minulou",
+            "konverzaci", "minulé", "minulý", "zaznamenané", "naše",
+            "společné", "vzpomínáš", "vzpomínka", "co jsme", "co jsem",
+            "říkal", "říkala", "mluvili", "diskutovali", "minule",
+        ]
+
+        # English memory keywords
+        english_keywords = [
+            "memory", "remember", "recall", "past", "previous",
+            "conversation", "discussed", "talked about", "you know",
+            "do you know", "what did", "what have", "stored",
+            "recorded", "earlier", "before", "last time",
+        ]
+
+        all_keywords = czech_keywords + english_keywords
+
+        return any(keyword in thought_lower for keyword in all_keywords)
+
     def _generate_action(self, thought: str, context: str) -> Dict[str, Any]:
         """Generate action based on thought."""
+        # SEMANTIC ROUTING: Check if this is a memory query first
+        if self._is_memory_query(thought):
+            logger.info("Semantic Routing: Memory query detected, forcing recall tool")
+            return {"tool": "recall", "params": {"query": thought[:100]}, "parallel": False}
+
         system_prompt = (
+            "CRITICAL INSTRUCTION FOR PERSONAL QUERIES:\n"
+            "IF USER ASKS ABOUT MEMORY, PERSONAL DATA, PAST CONVERSATIONS:\n"
+            "  → MUST USE 'recall' TOOL FIRST (NOT web_search!)\n"
+            "  → web_search IS FOR EXTERNAL INFORMATION ONLY\n"
+            "  → VIOLATION WILL CAUSE FAILURE!\n\n"
             "You are JARVIS, an AI assistant. Based on your thought, select the best tool action.\n\n"
             "CRITICAL PRIORITY: If the user asks about their personal data, past instructions, passwords, names, or any context from the current or previous sessions, you MUST ALWAYS use the 'recall' tool first to check your memory. DO NOT use 'web_search' for personal or session-related questions!\n\n"
             "CRITICAL INSTRUCTION FOR TOOL USAGE: When outputting an Action, you MUST output the "
