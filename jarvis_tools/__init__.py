@@ -1,6 +1,7 @@
 """JARVIS Tools Module"""
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -178,6 +179,48 @@ def validate_tool_params(tool_name: str, params: Dict[str, Any]) -> Tuple[bool, 
         return False, error_msg
 
 
+def get_tool_required_params(tool_name: str) -> list:
+    """Get list of required parameter names for a tool."""
+    required_map = {
+        "get_time": [],
+        "open_app": ["app_name"],
+        "close_app": ["app_name"],
+        "run_command": ["command"],
+        "web_search": ["query"],
+        "write_file": ["file_path", "content"],
+        "read_file": ["file_path"],
+        "recall": ["query"],
+        "remember": ["content"],
+        "forget": ["fact_id"],
+        "list_dir": [],
+        "system_info": [],
+        "manage_tasks": ["action"],
+        "run_python": ["code"],
+    }
+    return required_map.get(tool_name, [])
+
+
+def get_tool_param_examples(tool_name: str) -> Dict[str, Any]:
+    """Get example parameters for a tool."""
+    examples = {
+        "get_time": {},
+        "open_app": {"app_name": "firefox", "intent": "Open web browser"},
+        "close_app": {"app_name": "firefox", "intent": "Close web browser"},
+        "run_command": {"command": "ls -la", "intent": "List files"},
+        "web_search": {"query": "weather in Prague"},
+        "write_file": {"file_path": "output.txt", "content": "Hello World", "intent": "Save greeting"},
+        "read_file": {"file_path": "document.txt"},
+        "recall": {"query": "user preferences"},
+        "remember": {"content": "User likes coffee", "fact_type": "preference", "confidence": 1.0},
+        "forget": {"fact_id": "abc123"},
+        "list_dir": {"path": "."},
+        "system_info": {},
+        "manage_tasks": {"action": "add", "task_description": "Buy milk"},
+        "run_python": {"code": "print(2+2)", "timeout": 30},
+    }
+    return examples.get(tool_name, {})
+
+
 def create_tool_class(jarvis_instance):
     def _tool_get_time(params):
         now = datetime.now()
@@ -275,52 +318,107 @@ def create_tool_class(jarvis_instance):
     def _tool_recall(params):
         q = params.get("query", "")
         if not q:
-            return f"{Colors.ERROR} Missing query"
+            return f"{Colors.ERROR} Missing query parameter"
+        
+        # Validate query length
+        if len(q.strip()) < 2:
+            return f"{Colors.WARNING} Query too short (min 2 characters)"
+        
         try:
+            # Check if jarvis_instance has memory
+            if not hasattr(jarvis_instance, 'memory') or jarvis_instance.memory is None:
+                return f"{Colors.ERROR} Memory not initialized"
+            
             results = jarvis_instance.memory.recall(q, k=5)
+            
             if not results:
-                return f"{Colors.WARNING} No memories"
-            out = [f"{Colors.INFO} Recall: {q}\n"]
+                return f"{Colors.WARNING} No memories found for '{q}'. Try a different query or the memory is empty."
+            
+            out = [f"{Colors.INFO} Recall: '{q}'\n"]
             for r in results:
+                content = r.get('content', '')
+                score = r.get('score', 0)
+                mem_type = r.get('type', '?')
+                # Truncate long content for display
+                if len(content) > 200:
+                    content = content[:200] + "..."
                 out.extend(
                     [
-                        f"• {r.get('content', '')}",
-                        f"  Score: {r.get('score', 0):.2f} | Type: {r.get('type', '?')}",
+                        f"• {content}",
+                        f"  Score: {score:.2f} | Type: {mem_type}",
                         "",
                     ]
                 )
             return "\n".join(out)
+            
         except Exception as e:
-            return f"{Colors.ERROR} {e}"
+            logger.exception("Recall tool failed")
+            return f"{Colors.ERROR} Failed to recall: {str(e)}"
 
     def _tool_remember(params):
         content = params.get("content", "")
         if not content:
-            return f"{Colors.ERROR} Missing content"
+            return f"{Colors.ERROR} Missing content parameter"
+        
         fact_type = params.get("fact_type", "observation")
         confidence = float(params.get("confidence", 1.0))
+        
+        # Validate fact_type
+        valid_fact_types = ["preference", "fact", "event", "observation"]
+        if fact_type not in valid_fact_types:
+            logger.warning("Invalid fact_type '%s', defaulting to 'observation'", fact_type)
+            fact_type = "observation"
+        
+        # Validate confidence range
+        if not (0.0 <= confidence <= 1.0):
+            logger.warning("Confidence %s out of range, clamping to [0, 1]", confidence)
+            confidence = max(0.0, min(1.0, confidence))
+        
         try:
+            # Check if jarvis_instance has memory
+            if not hasattr(jarvis_instance, 'memory') or jarvis_instance.memory is None:
+                return f"{Colors.ERROR} Memory not initialized"
+            
             fact = jarvis_instance.memory.remember(
                 content=content,
                 fact_type=fact_type,
                 source="user",
                 confidence=confidence,
             )
-            return f"{Colors.SUCCESS} Remembered [{fact.id}]: {content}"
+            
+            if fact and hasattr(fact, 'id'):
+                return f"{Colors.SUCCESS} Remembered [{fact.id}]: {content[:100]}{'...' if len(content) > 100 else ''}"
+            else:
+                return f"{Colors.SUCCESS} Remembered: {content[:100]}{'...' if len(content) > 100 else ''}"
+                
         except Exception as e:
-            return f"{Colors.ERROR} {e}"
+            logger.exception("Remember tool failed")
+            return f"{Colors.ERROR} Failed to remember: {str(e)}"
 
     def _tool_forget(params):
         fact_id = params.get("fact_id", "")
         if not fact_id:
-            return f"{Colors.ERROR} Missing fact_id"
+            return f"{Colors.ERROR} Missing fact_id parameter. Usage: forget with fact_id='<id>'"
+        
+        # Validate fact_id format (basic UUID validation)
+        if not re.match(r'^[a-f0-9\-]+$', fact_id, re.IGNORECASE):
+            return f"{Colors.WARNING} Invalid fact_id format: '{fact_id}'. Expected UUID format."
+        
         try:
+            # Check if jarvis_instance has memory
+            if not hasattr(jarvis_instance, 'memory') or jarvis_instance.memory is None:
+                return f"{Colors.ERROR} Memory not initialized"
+            
             removed = jarvis_instance.memory.forget(fact_id)
+            
             if removed:
                 return f"{Colors.SUCCESS} Forgotten [{fact_id}]"
-            return f"{Colors.WARNING} Memory [{fact_id}] not found"
+            else:
+                return f"{Colors.WARNING} Memory [{fact_id}] not found. It may have already been deleted or the ID is incorrect."
+                
         except Exception as e:
-            return f"{Colors.ERROR} {e}"
+            logger.exception("Forget tool failed")
+            return f"{Colors.ERROR} Failed to forget: {str(e)}"
 
     def _tool_list_dir(params):
         p = params.get("path", ".")
@@ -427,7 +525,6 @@ def create_tool_class(jarvis_instance):
             r"subprocess\.[a-zA-Z_]+",
             r"socket\.[a-zA-Z_]+",
         ]
-        import re
         for pattern in dangerous_patterns:
             if re.search(pattern, code, re.IGNORECASE):
                 logger.warning("Code interpreter blocked dangerous pattern: %s", pattern)
@@ -572,4 +669,6 @@ __all__ = [
     "SystemInfoParams",
     "ManageTasksParams",
     "RunPythonParams",
+    "get_tool_required_params",
+    "get_tool_param_examples",
 ]
