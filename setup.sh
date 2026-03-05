@@ -11,7 +11,10 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_MIN="3.10"
 OLLAMA_URL="http://localhost:11434"
-MODELS=("nomic-embed-text" "jobautomation/OpenEuroLLM-Czech:latest" "qwen2.5:3b-instruct")
+
+# Always include these models
+BASE_MODELS=("nomic-embed-text" "jobautomation/OpenEuroLLM-Czech:latest")
+SELECTED_MODEL=""
 
 # ─── Colors ────────────────────────────────────────────────────────────
 RED='\033[91m'
@@ -27,6 +30,163 @@ log_info() { echo -e "${CYAN}$1${RESET}"; }
 log_success() { echo -e "${GREEN}✓ $1${RESET}"; }
 log_warn() { echo -e "${YELLOW}⚠ $1${RESET}"; }
 log_error() { echo -e "${RED}✗ $1${RESET}"; }
+
+detect_hardware() {
+    local vram_gb=0
+    local ram_gb=0
+    local gpu_name="No GPU detected"
+
+    # Detect VRAM using nvidia-smi
+    if command -v nvidia-smi &> /dev/null; then
+        local vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
+        if [ -n "$vram_mb" ]; then
+            vram_gb=$((vram_mb / 1024))
+            gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+        fi
+    fi
+
+    # Detect RAM
+    if command -v free &> /dev/null; then
+        ram_mb=$(free -m | awk '/^Mem:/ {print $2}')
+        ram_gb=$((ram_mb / 1024))
+    fi
+
+    echo "$vram_gb|$ram_gb|$gpu_name"
+}
+
+recommend_models() {
+    local vram_gb=$1
+
+    if [ "$vram_gb" -lt 4 ]; then
+        echo "qwen2.5:3b-instruct|Lightweight, fast (best for low VRAM)"
+    elif [ "$vram_gb" -lt 6 ]; then
+        echo "qwen2.5:7b-instruct|Good balance"
+        echo "llama3.1:8b-instruct-q4_K_M|Better quality (quantized)"
+    elif [ "$vram_gb" -lt 9 ]; then
+        echo "llama3.1:8b-instruct-q4_K_M|RECOMMENDED - Best for 8GB VRAM"
+        echo "llama3.1:8b-instruct-q5_K_M|Higher quality, slower"
+        echo "qwen2.5:7b-instruct|Faster alternative"
+        echo "gemma2:9b-instruct-q4_K_M|Good for reasoning"
+    else
+        echo "llama3.1:8b-instruct-q5_K_M|Fast and capable"
+        echo "llama3.1:8b-instruct|Best quality 8B"
+        echo "mistral-nemo:12b-instruct-q4_K_M|Higher quality 12B"
+        echo "llama3.1:70b-instruct-q4_K_M|Best quality (slow, requires 8GB+)"
+    fi
+}
+
+select_model() {
+    local hardware_info=$1
+    local vram_gb=$(echo "$hardware_info" | cut -d'|' -f1)
+    local ram_gb=$(echo "$hardware_info" | cut -d'|' -f2)
+    local gpu_name=$(echo "$hardware_info" | cut -d'|' -f3)
+
+    echo
+    log_info "======================================================================"
+    log_info "Hardware Detection Results:"
+    log_info "======================================================================"
+    echo "  GPU:  $gpu_name"
+    if [ "$vram_gb" -gt 0 ]; then
+        echo "  VRAM: $vram_gb GB"
+    else
+        echo "  VRAM: Not detected (or no NVIDIA GPU)"
+    fi
+    if [ "$ram_gb" -gt 0 ]; then
+        echo "  RAM:  $ram_gb GB"
+    fi
+    echo
+    log_info "======================================================================"
+    log_info "Recommended models for your system:"
+    log_info "======================================================================"
+    echo
+
+    local recommendations=($(recommend_models $vram_gb))
+    local index=1
+
+    for rec in "${recommendations[@]}"; do
+        local model=$(echo "$rec" | cut -d'|' -f1)
+        local desc=$(echo "$rec" | cut -d'|' -f2-)
+
+        echo "  [$index] $model"
+        echo "      $desc"
+        echo
+
+        # Store recommendation
+        RECOMMENDATIONS[$index]=$model
+        index=$((index + 1))
+    done
+
+    local custom_choice=$index
+    echo "  [$custom_choice] Custom - Enter your own model name"
+    echo
+
+    # Get user selection
+    while true; do
+        read -p "Select [1-$custom_choice]: " choice
+
+        # Check if input is a number
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            if [ "$choice" -ge 1 ] && [ "$choice" -le "$custom_choice" ]; then
+                if [ "$choice" -eq "$custom_choice" ]; then
+                    # Custom model
+                    while true; do
+                        read -p "Enter model name (e.g., llama3.1:8b-instruct): " custom_model
+                        if [ -n "$custom_model" ]; then
+                            SELECTED_MODEL="$custom_model"
+                            log_success "Selected: $custom_model"
+                            return 0
+                        fi
+                        log_error "Please enter a model name"
+                    done
+                else
+                    # Pre-selected model
+                    SELECTED_MODEL="${RECOMMENDATIONS[$choice]}"
+                    log_success "Selected: $SELECTED_MODEL"
+                    return 0
+                fi
+            else
+                log_error "Please enter a number between 1 and $custom_choice"
+            fi
+        else
+            log_error "Please enter a valid number"
+        fi
+    done
+}
+
+update_user_config() {
+    local model=$1
+    local config_file="$PROJECT_DIR/jarvis_config/user_config.py"
+
+    cat > "$config_file" << EOF
+"""
+User Configuration Override for JARVIS
+
+This file was auto-generated by the setup script based on your
+detected hardware and selected model preferences.
+
+You can also edit this file manually to change model settings.
+"""
+
+def apply_user_config():
+    """Apply user-selected model configuration."""
+    import jarvis_config as _cfg
+
+    # Override with user-selected models
+    _cfg.MODELS["planner"] = "$model"
+    _cfg.MODELS["verifier"] = "$model"
+    _cfg.MODELS["reasoner"] = "$model"
+
+    # Note: MODELS["czech_gateway"] should remain as jobautomation/OpenEuroLLM-Czech:latest
+EOF
+
+    if [ $? -eq 0 ]; then
+        log_success "Configuration updated: $config_file"
+        return 0
+    else
+        log_error "Failed to update configuration"
+        return 1
+    fi
+}
 
 print_banner() {
     echo -e "${CYAN}"
@@ -198,10 +358,10 @@ test_jarvis() {
 # ─── Main Installation Flow ───────────────────────────────────────────
 main() {
     print_banner
-    
+
     # ─── Step 1: Check Python ─────────────────────────────────────────
-    log_info "[1/6] Checking Python installation..."
-    
+    log_info "[1/7] Checking Python installation..."
+
     if ! check_python; then
         log_error "Python 3.10+ not found!"
         echo
@@ -213,32 +373,32 @@ main() {
         echo
         exit 1
     fi
-    
+
     get_python_version
     log_success "Python $PYTHON_VERSION found"
-    
+
     # ─── Step 2: Create Virtual Environment ───────────────────────────
-    log_info "[2/6] Setting up virtual environment..."
-    
+    log_info "[2/7] Setting up virtual environment..."
+
     if [ -d "$VENV_DIR" ]; then
         log_info "Virtual environment already exists"
     else
         $PYTHON_CMD -m venv "$VENV_DIR"
         log_success "Virtual environment created"
     fi
-    
+
     # Activate virtual environment
     source "$VENV_DIR/bin/activate"
     PYTHON_CMD="python"
-    
+
     # ─── Step 3: Install Dependencies ─────────────────────────────────
-    log_info "[3/6] Installing Python dependencies..."
-    
+    log_info "[3/7] Installing Python dependencies..."
+
     install_dependencies
-    
+
     # ─── Step 4: Check/Install Ollama ─────────────────────────────────
-    log_info "[4/6] Checking Ollama..."
-    
+    log_info "[4/7] Checking Ollama..."
+
     if ! check_ollama_running; then
         # Ollama not running - check if installed
         if ! command -v ollama &> /dev/null; then
@@ -259,38 +419,60 @@ main() {
             }
         fi
     fi
-    
+
     log_success "Ollama is running"
-    
-    # ─── Step 5: Pull Required Models ─────────────────────────────────
-    log_info "[5/6] Downloading LLM models..."
+
+    # ─── Step 5: Detect Hardware and Select Model ─────────────────────
+    log_info "[5/7] Detecting hardware and selecting model..."
+
+    hardware_info=$(detect_hardware)
+    select_model "$hardware_info"
+
+    # ─── Step 6: Pull Required Models ─────────────────────────────────
+    log_info "[6/7] Downloading LLM models..."
     echo
     echo -e "${YELLOW}  Model sizes (approximate):${RESET}"
     echo "  - nomic-embed-text:       ~274 MB"
     echo "  - OpenEuroLLM-Czech:      ~4-5 GB"
-    echo "  - qwen2.5:3b-instruct:    ~2 GB"
-    echo "  Total: ~7 GB"
+    echo "  - $SELECTED_MODEL:      ~2-10 GB (varies by model)"
     echo
     echo -e "${YELLOW}  This will take a while depending on your internet speed...${RESET}"
     echo
-    
-    for model in "${MODELS[@]}"; do
+
+    # Pull base models
+    for model in "${BASE_MODELS[@]}"; do
         pull_model "$model" || {
             log_error "Failed to pull model: $model"
             exit 1
         }
         echo
     done
-    
-    # ─── Step 6: Create Data Directories ───────────────────────────────
-    log_info "[6/6] Creating data directories..."
+
+    # Pull selected model
+    pull_model "$SELECTED_MODEL" || {
+        log_error "Failed to pull model: $SELECTED_MODEL"
+        exit 1
+    }
+    echo
+
+    # Update user configuration
+    update_user_config "$SELECTED_MODEL" || {
+        log_warn "Failed to update configuration. You may need to edit jarvis_config/user_config.py manually"
+    }
+
+    # ─── Step 7: Create Data Directories ───────────────────────────────
+    log_info "[7/7] Creating data directories..."
     create_data_dirs
-    
+
     # ─── Final: Summary ────────────────────────────────────────────────
     echo
     log_success "════════════════════════════════════════════════════════════"
     log_success "  🎉 INSTALLATION COMPLETE!"
     log_success "════════════════════════════════════════════════════════════"
+    echo
+    echo "  Configuration:"
+    echo "  - Selected model: $SELECTED_MODEL"
+    echo "  - Czech gateway:  OpenEuroLLM-Czech:latest"
     echo
     echo "  Next steps:"
     echo "  1. Run: ./run.sh"
@@ -298,10 +480,10 @@ main() {
     echo
     echo "  First run will initialize the vector database..."
     echo
-    
+
     # Make run.sh executable
     chmod +x "$PROJECT_DIR/run.sh" 2>/dev/null || true
-    
+
     exit 0
 }
 

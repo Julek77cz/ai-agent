@@ -17,7 +17,10 @@ cd /d "%PROJECT_DIR%"
 set "VENV_DIR=%PROJECT_DIR%\.venv"
 set "PYTHON_MIN=3.10"
 set "OLLAMA_URL=http://localhost:11434"
-set "MODELS=nomic-embed-text jobautomation/OpenEuroLLM-Czech:latest qwen2.5:3b-instruct"
+
+:: Always include these models
+set "BASE_MODELS=nomic-embed-text jobautomation/OpenEuroLLM-Czech:latest"
+set "SELECTED_MODEL="
 
 :: ─── Colors for Windows ───────────────────────────────────────────────
 set "RESET=[0m"
@@ -35,6 +38,241 @@ setlocal
 set "color=%~1"
 set "text=%~2"
 echo %color%%text%%RESET%
+endlocal
+goto :eof
+
+:detect_hardware
+setlocal
+set "VRAM_GB=0"
+set "RAM_GB=0"
+set "GPU_NAME=No GPU detected"
+
+:: Detect VRAM using nvidia-smi
+for /f "tokens=*" %%a in ('nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2^>nul') do (
+    set /a VRAM_MB=%%a
+    set /a VRAM_GB=VRAM_MB/1024
+)
+
+:: Detect GPU name
+for /f "tokens=*" %%a in ('nvidia-smi --query-gpu=name --format=csv,noheader 2^>nul') do (
+    set "GPU_NAME=%%a"
+    goto :ram_detection
+)
+
+:ram_detection
+:: Detect RAM using wmic
+for /f "tokens=2 delims==" %%a in ('wmic OS get TotalVisibleMemorySize /value 2^>nul ^| find "TotalVisibleMemorySize"') do (
+    set /a RAM_KB=%%a
+    set /a RAM_GB=RAM_KB/1048576
+)
+
+echo %VRAM_GB%^|%RAM_GB%^|%GPU_NAME%
+endlocal
+goto :eof
+
+:recommend_models
+setlocal
+set "vram_gb=%~1"
+
+if %vram_gb% lss 4 (
+    echo qwen2.5:3b-instruct|Lightweight, fast (best for low VRAM)
+    goto :end_recommend
+)
+if %vram_gb% lss 6 (
+    echo qwen2.5:7b-instruct|Good balance
+    echo llama3.1:8b-instruct-q4_K_M|Better quality (quantized)
+    goto :end_recommend
+)
+if %vram_gb% lss 9 (
+    echo llama3.1:8b-instruct-q4_K_M|RECOMMENDED - Best for 8GB VRAM
+    echo llama3.1:8b-instruct-q5_K_M|Higher quality, slower
+    echo qwen2.5:7b-instruct|Faster alternative
+    echo gemma2:9b-instruct-q4_K_M|Good for reasoning
+    goto :end_recommend
+)
+echo llama3.1:8b-instruct-q5_K_M|Fast and capable
+echo llama3.1:8b-instruct|Best quality 8B
+echo mistral-nemo:12b-instruct-q4_K_M|Higher quality 12B
+echo llama3.1:70b-instruct-q4_K_M|Best quality (slow, requires 8GB+)
+
+:end_recommend
+endlocal
+goto :eof
+
+:select_model
+setlocal
+set "hardware_info=%~1"
+for /f "tokens=1-3 delims=|" %%a in ("%hardware_info%") do (
+    set VRAM_GB=%%a
+    set RAM_GB=%%b
+    set GPU_NAME=%%c
+)
+
+echo.
+call :echo_color %CYAN% "======================================================================"
+call :echo_color %CYAN% "Hardware Detection Results:"
+call :echo_color %CYAN% "======================================================================"
+echo   GPU:  %GPU_NAME%
+if %VRAM_GB% gtr 0 (
+    echo   VRAM: %VRAM_GB% GB
+) else (
+    echo   VRAM: Not detected (or no NVIDIA GPU)
+)
+if %RAM_GB% gtr 0 (
+    echo   RAM:  %RAM_GB% GB
+)
+echo.
+call :echo_color %CYAN% "======================================================================"
+call :echo_color %CYAN% "Recommended models for your system:"
+call :echo_color %CYAN% "======================================================================"
+echo.
+
+:: Display recommendations based on VRAM
+set INDEX=1
+
+if %VRAM_GB% lss 4 (
+    echo   [!INDEX!] qwen2.5:3b-instruct
+    echo       Lightweight, fast (best for low VRAM)
+    echo.
+    set "REC_!INDEX!=qwen2.5:3b-instruct"
+    set /a INDEX+=1
+)
+if %VRAM_GB% geq 4 (
+    if %VRAM_GB% lss 6 (
+        echo   [!INDEX!] qwen2.5:7b-instruct
+        echo       Good balance
+        echo.
+        set "REC_!INDEX!=qwen2.5:7b-instruct"
+        set /a INDEX+=1
+        echo   [!INDEX!] llama3.1:8b-instruct-q4_K_M
+        echo       Better quality (quantized)
+        echo.
+        set "REC_!INDEX!=llama3.1:8b-instruct-q4_K_M"
+        set /a INDEX+=1
+    )
+)
+if %VRAM_GB% geq 6 (
+    if %VRAM_GB% lss 9 (
+        echo   [!INDEX!] llama3.1:8b-instruct-q4_K_M
+        echo       RECOMMENDED - Best for 8GB VRAM
+        echo.
+        set "REC_!INDEX!=llama3.1:8b-instruct-q4_K_M"
+        set /a INDEX+=1
+        echo   [!INDEX!] llama3.1:8b-instruct-q5_K_M
+        echo       Higher quality, slower
+        echo.
+        set "REC_!INDEX!=llama3.1:8b-instruct-q5_K_M"
+        set /a INDEX+=1
+        echo   [!INDEX!] qwen2.5:7b-instruct
+        echo       Faster alternative
+        echo.
+        set "REC_!INDEX!=qwen2.5:7b-instruct"
+        set /a INDEX+=1
+        echo   [!INDEX!] gemma2:9b-instruct-q4_K_M
+        echo       Good for reasoning
+        echo.
+        set "REC_!INDEX!=gemma2:9b-instruct-q4_K_M"
+        set /a INDEX+=1
+    )
+)
+if %VRAM_GB% geq 9 (
+    echo   [!INDEX!] llama3.1:8b-instruct-q5_K_M
+    echo       Fast and capable
+    echo.
+    set "REC_!INDEX!=llama3.1:8b-instruct-q5_K_M"
+    set /a INDEX+=1
+    echo   [!INDEX!] llama3.1:8b-instruct
+    echo       Best quality 8B
+    echo.
+    set "REC_!INDEX!=llama3.1:8b-instruct"
+    set /a INDEX+=1
+    echo   [!INDEX!] mistral-nemo:12b-instruct-q4_K_M
+    echo       Higher quality 12B
+    echo.
+    set "REC_!INDEX!=mistral-nemo:12b-instruct-q4_K_M"
+    set /a INDEX+=1
+    echo   [!INDEX!] llama3.1:70b-instruct-q4_K_M
+    echo       Best quality (slow, requires 8GB+)
+    echo.
+    set "REC_!INDEX!=llama3.1:70b-instruct-q4_K_M"
+    set /a INDEX+=1
+)
+
+set CUSTOM_CHOICE=%INDEX%
+echo   [%CUSTOM_CHOICE%] Custom - Enter your own model name
+echo.
+
+:: Get user selection
+:selection_loop
+set /p CHOICE="Select [1-%CUSTOM_CHOICE%]: "
+
+:: Validate input
+echo %CHOICE%| findstr /r "^[0-9][0-9]*$" >nul
+if errorlevel 1 (
+    call :echo_color %RED% "  Please enter a valid number"
+    goto selection_loop
+)
+
+if %CHOICE% lss 1 (
+    call :echo_color %RED% "  Please enter a number between 1 and %CUSTOM_CHOICE%"
+    goto selection_loop
+)
+if %CHOICE% gtr %CUSTOM_CHOICE% (
+    call :echo_color %RED% "  Please enter a number between 1 and %CUSTOM_CHOICE%"
+    goto selection_loop
+)
+
+if %CHOICE% equ %CUSTOM_CHOICE% (
+    :: Custom model selection
+    :custom_model_loop
+    set /p CUSTOM_MODEL="Enter model name (e.g., llama3.1:8b-instruct): "
+    if "!CUSTOM_MODEL!"=="" (
+        call :echo_color %RED% "  Please enter a model name"
+        goto custom_model_loop
+    )
+    set "SELECTED_MODEL=!CUSTOM_MODEL!"
+) else (
+    :: Pre-selected model
+    for %%i in (!CHOICE!) do set "SELECTED_MODEL=!REC_%%i!"
+)
+
+call :echo_color %GREEN% "  Selected: !SELECTED_MODEL!"
+endlocal & set "SELECTED_MODEL=%SELECTED_MODEL%"
+goto :eof
+
+:update_user_config
+setlocal
+set "model=%~1"
+set "config_file=%PROJECT_DIR%\jarvis_config\user_config.py"
+
+(
+echo """
+echo User Configuration Override for JARVIS
+echo.
+echo This file was auto-generated by the setup script based on your
+echo detected hardware and selected model preferences.
+echo.
+echo You can also edit this file manually to change model settings.
+echo """
+echo.
+echo def apply_user_config():
+echo     """Apply user-selected model configuration."""
+echo     import jarvis_config as _cfg
+echo.
+echo     # Override with user-selected models
+echo     _cfg.MODELS["planner"] = "%model%"
+echo     _cfg.MODELS["verifier"] = "%model%"
+echo     _cfg.MODELS["reasoner"] = "%model%"
+echo.
+echo     # Note: MODELS["czech_gateway"] should remain as jobautomation/OpenEuroLLM-Czech:latest
+) > "%config_file%"
+
+if errorlevel 1 (
+    call :echo_color %RED% "  Failed to update configuration"
+    exit /b 1
+)
+
+call :echo_color %GREEN% "  Configuration updated: %config_file%"
 endlocal
 goto :eof
 
@@ -178,7 +416,7 @@ exit /b 0
 call :print_banner
 
 :: ─── Step 1: Check Python ───────────────────────────────────────────────
-call :echo_color %CYAN% "[1/6] Checking Python installation..."
+call :echo_color %CYAN% "[1/7] Checking Python installation..."
 call :check_python
 if !errorlevel! equ 1 (
     call :echo_color %RED% "ERROR: Python 3.10+ not found!"
@@ -193,7 +431,7 @@ call :get_python_version
 call :echo_color %GREEN% "  ✓ Python !PYTHON_VERSION! found"
 
 :: ─── Step 2: Create Virtual Environment ─────────────────────────────────
-call :echo_color %CYAN% "[2/6] Setting up virtual environment..."
+call :echo_color %CYAN% "[2/7] Setting up virtual environment..."
 call :create_venv
 if !errorlevel! equ 1 (
     pause
@@ -202,7 +440,7 @@ if !errorlevel! equ 1 (
 call :activate_venv
 
 :: ─── Step 3: Install Dependencies ──────────────────────────────────────
-call :echo_color %CYAN% "[3/6] Installing Python dependencies..."
+call :echo_color %CYAN% "[3/7] Installing Python dependencies..."
 call :install_dependencies
 if !errorlevel! equ 1 (
     pause
@@ -211,7 +449,7 @@ if !errorlevel! equ 1 (
 call :echo_color %GREEN% "  ✓ Dependencies installed"
 
 :: ─── Step 4: Check/Install Ollama ───────────────────────────────────────
-call :echo_color %CYAN% "[4/6] Checking Ollama..."
+call :echo_color %CYAN% "[4/7] Checking Ollama..."
 call :check_ollama_running
 if !errorlevel! neq 0 (
     :: Ollama not running - check if installed
@@ -232,18 +470,24 @@ if !errorlevel! neq 0 (
 )
 call :echo_color %GREEN% "  ✓ Ollama is running"
 
-:: ─── Step 5: Pull Required Models ───────────────────────────────────────
-call :echo_color %CYAN% "[5/6] Downloading LLM models..."
+:: ─── Step 5: Detect Hardware and Select Model ─────────────────────────
+call :echo_color %CYAN% "[5/7] Detecting hardware and selecting model..."
+for /f "tokens=*" %%h in ('call :detect_hardware') do set "HARDWARE_INFO=%%h"
+call :select_model "!HARDWARE_INFO!"
+
+:: ─── Step 6: Pull Required Models ───────────────────────────────────────
+call :echo_color %CYAN% "[6/7] Downloading LLM models..."
 echo.
 echo   Model sizes (approximate):
 echo   - nomic-embed-text:       ~274 MB
 echo   - OpenEuroLLM-Czech:      ~4-5 GB
-echo   - qwen2.5:3b-instruct:    ~2 GB
-echo   Total: ~7 GB
+echo   - %SELECTED_MODEL%:      ~2-10 GB ^(varies by model^)
 echo.
 echo   This will take a while depending on your internet speed...
 echo.
-for %%m in (%MODELS%) do (
+
+:: Pull base models
+for %%m in (%BASE_MODELS%) do (
     call :pull_model "%%m"
     if !errorlevel! neq 0 (
         call :echo_color %RED% "  ERROR: Failed to pull model %%m"
@@ -252,8 +496,22 @@ for %%m in (%MODELS%) do (
     )
 )
 
-:: ─── Step 6: Create Data Directories ───────────────────────────────────
-call :echo_color %CYAN% "[6/6] Creating data directories..."
+:: Pull selected model
+call :pull_model "%SELECTED_MODEL%"
+if !errorlevel! neq 0 (
+    call :echo_color %RED% "  ERROR: Failed to pull model %SELECTED_MODEL%"
+    pause
+    exit /b 1
+)
+
+:: Update user configuration
+call :update_user_config "%SELECTED_MODEL%"
+if !errorlevel! neq 0 (
+    call :echo_color %YELLOW% "  WARNING: Failed to update configuration. You may need to edit jarvis_config\user_config.py manually"
+)
+
+:: ─── Step 7: Create Data Directories ───────────────────────────────────
+call :echo_color %CYAN% "[7/7] Creating data directories..."
 call :create_data_dirs
 call :echo_color %GREEN% "  ✓ Directories created"
 
@@ -262,6 +520,10 @@ echo.
 call :echo_color %GREEN% "════════════════════════════════════════════════════════════"
 call :echo_color %GREEN% "  🎉 INSTALLATION COMPLETE!"
 call :echo_color %GREEN% "════════════════════════════════════════════════════════════"
+echo.
+echo   Configuration:
+echo   - Selected model: %SELECTED_MODEL%
+echo   - Czech gateway:  OpenEuroLLM-Czech:latest
 echo.
 echo   Next steps:
 echo   1. Run: run.bat   (or double-click run.bat)

@@ -1,6 +1,7 @@
 """JARVIS Configuration Module"""
 from pathlib import Path
 from typing import Dict, Any
+import sys
 
 JARVIS_DATA_DIR = Path.cwd() / "jarvis_data"
 
@@ -37,12 +38,22 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 EMBED_URL = "http://localhost:11434/api/embeddings"
 EMBED_MODEL = "nomic-embed-text"
 
+# Default models - can be overridden by user_config.py
 MODELS: Dict[str, str] = {
     "czech_gateway": "jobautomation/OpenEuroLLM-Czech:latest",
     "planner": "qwen2.5:3b-instruct",
     "verifier": "qwen2.5:3b-instruct",
     "reasoner": "qwen2.5:3b-instruct",
 }
+
+# Load user configuration override if exists
+try:
+    from jarvis_config.user_config import apply_user_config
+    apply_user_config()
+except ImportError:
+    pass
+except Exception as e:
+    pass
 
 HW_OPTIONS: Dict[str, Any] = {
     "num_ctx": 4096, "num_predict": 1024,
