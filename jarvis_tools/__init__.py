@@ -214,7 +214,15 @@ def create_tool_class(jarvis_instance):
         if any(d in cmd.lower() for d in dangerous):
             return f"{Colors.ERROR} Blocked"
         try:
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            r = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace",
+            )
             return r.stdout or r.stderr or f"{Colors.WARNING} No output"
         except Exception as e:
             return f"{Colors.ERROR} {e}"
