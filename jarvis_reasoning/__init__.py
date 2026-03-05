@@ -601,17 +601,65 @@ What action should I take? Return JSON with tool name and parameters."""
                 [{"role": "user", "content": prompt}],
                 system_prompt=system_prompt,
             )
+            logger.debug("Raw action result from planner: %s", result)
             if result and isinstance(result, dict) and "tool" in result:
+                tool_name = result.get("tool", "")
+                params = result.get("params", {})
+
+                # Fallback: if params empty but tool requires them, generate from thought
+                if not params and tool_name in ["recall", "remember", "forget", "web_search", "read_file", "write_file"]:
+                    # Extract query/content from thought
+                    params = self._extract_params_from_thought(tool_name, thought)
+                    logger.warning("Planner missing params for %s, extracted: %s", tool_name, params)
+
                 return {
-                    "tool": result.get("tool", ""),
-                    "params": result.get("params", {}),
+                    "tool": tool_name,
+                    "params": params,
                     "parallel": result.get("parallel", False),
                 }
         except Exception as e:
             logger.debug("Action generation failed: %s", e)
 
-        # Fallback: try to use recall for information queries
-        return {"tool": "recall", "params": {"query": thought}, "parallel": False}
+        # Fallback: try to extract tool from thought or use recall
+        fallback_tool = self._extract_tool_from_thought(thought)
+        if fallback_tool:
+            params = self._extract_params_from_thought(fallback_tool, thought)
+            return {"tool": fallback_tool, "params": params, "parallel": False}
+
+        return {"tool": "recall", "params": {"query": thought[:100]}, "parallel": False}
+
+    def _extract_params_from_thought(self, tool_name: str, thought: str) -> Dict[str, Any]:
+        """Extract parameters from thought text when model fails to provide them."""
+        if tool_name == "recall":
+            return {"query": thought[:100]}
+        elif tool_name == "remember":
+            return {"content": thought[:500], "fact_type": "observation"}
+        elif tool_name == "web_search":
+            return {"query": thought[:100]}
+        elif tool_name in ["read_file", "write_file"]:
+            # Try to extract path from thought
+            path_match = re.search(r'["\'](.+?\.(txt|md|json|py))["\']', thought)
+            if path_match:
+                return {"file_path": path_match.group(1)}
+            return {"file_path": "output.txt"}  # fallback
+        return {}
+
+    def _extract_tool_from_thought(self, thought: str) -> Optional[str]:
+        """Extract tool name from thought text based on keywords."""
+        thought_lower = thought.lower()
+        tool_keywords = {
+            "recall": ["remember", "recall", "memory", "past", "previous"],
+            "web_search": ["search", "look up", "find online", "google", "internet"],
+            "read_file": ["read file", "open file", "load file", "file content"],
+            "write_file": ["write file", "save file", "create file", "store file"],
+            "get_time": ["time", "current time", "what time", "clock"],
+            "system_info": ["system", "cpu", "memory", "resources"],
+            "list_dir": ["list directory", "show files", "folder contents"],
+        }
+        for tool, keywords in tool_keywords.items():
+            if any(keyword in thought_lower for keyword in keywords):
+                return tool
+        return None
 
     def _execute_tool(self, tool_name: str, params: Dict) -> str:
         """Execute a tool with parameter validation and error tracking."""
