@@ -573,13 +573,17 @@ What should I do next? Think about the best approach."""
     def _generate_action(self, thought: str, context: str) -> Dict[str, Any]:
         """Generate action based on thought."""
         system_prompt = (
-            "You are JARVIS, an AI assistant. Based on your thought, select the best "
-            "tool action. Return ONLY valid JSON with this structure:\n"
+            "You are JARVIS, an AI assistant. Based on your thought, select the best tool action.\n\n"
+            "CRITICAL INSTRUCTION FOR TOOL USAGE: When outputting an Action, you MUST output the "
+            "parameters as a valid JSON object immediately following the action name, like this:\n"
+            'Action: tool_name {\\"param1\\": \\"value1\\", \\"param2\\": \\"value2\\"}\n\n'
+            "DO NOT output the action name without the JSON parameters if the tool requires them!\n\n"
+            "Return ONLY valid JSON with this structure:\n"
             '{\n'
             '  "tool": "tool_name",\n'
-            '  "params": {"param1": "value1"},\n'
+            '  "params": {"param1": "value1", "param2": "value2"},\n'
             '  "parallel": false\n'
-            '}\n'
+            '}\n\n'
             "Available tools: get_time, open_app, close_app, run_command, web_search, "
             "write_file, read_file, recall, remember, forget, list_dir, system_info, manage_tasks"
         )
