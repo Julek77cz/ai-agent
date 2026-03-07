@@ -14,7 +14,6 @@ from jarvis_config import (
     MAX_HISTORY,
     RATE_LIMIT_SECONDS,
     SMALLTALK_PATTERNS,
-    MEMORY_PATTERNS,
     SWARM_ENABLED,
     SWARM_MAX_AGENTS,
     SWARM_TIMEOUT_SECONDS,
@@ -227,10 +226,6 @@ class JarvisV19:
         q = query.lower()
         return any(p in q for p in SMALLTALK_PATTERNS)
 
-    def _detect_memory_query(self, query: str) -> bool:
-        q = query.lower()
-        return any(p in q for p in MEMORY_PATTERNS)
-
     def _translate_to_en(self, query: str) -> str:
         translations = {
             "co je": "what is",
@@ -253,27 +248,15 @@ class JarvisV19:
         """
         Process a user query using ReAct reasoning loop or Swarm architecture.
 
-        Smalltalk and memory queries are handled directly.
+        Smalltalk is handled directly.
         Complex tasks use the Swarm architecture for parallel sub-agent execution.
-        All other queries go through the standard ReAct reasoning loop.
+        All other queries (including memory queries) go through the standard ReAct reasoning loop.
         """
         self.memory.add_message("user", query)
 
         # Handle smalltalk directly
         if self._detect_smalltalk(query):
             response = "Ahoj! Jsem JARVIS. Jak ti mohu pomoci?"
-            if stream_callback:
-                stream_callback(response)
-            self.memory.add_message("assistant", response)
-            return response
-
-        # Handle memory queries directly
-        if self._detect_memory_query(query):
-            facts = self.memory.get_all_facts()
-            if facts:
-                response = "Co o tobě vím:\n" + "\n".join([f"• {f.content}" for f in facts[:10]])
-            else:
-                response = "Zatím o tobě moc nevím."
             if stream_callback:
                 stream_callback(response)
             self.memory.add_message("assistant", response)
