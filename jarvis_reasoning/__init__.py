@@ -573,35 +573,21 @@ What should I do next? Think about the best approach."""
     def _is_memory_query(self, thought: str) -> bool:
         """
         Detect if the thought is a memory query using semantic routing.
-        Checks for Czech and English keywords indicating memory-related queries.
-
-        Args:
-            thought: The thought text to analyze
-
-        Returns:
-            True if this is a memory query, False otherwise
+        Queries are now in English (translated by orchestrator before ReActLoop).
         """
         thought_lower = thought.lower()
-
-        # Czech memory keywords
-        czech_keywords = [
-            "pamatuješ", "pamatuj", "pamatuje", "si", "nám", "minulou",
-            "konverzaci", "minulé", "minulý", "zaznamenané", "naše",
-            "společné", "vzpomínáš", "vzpomínka", "co jsme", "co jsem",
-            "říkal", "říkala", "mluvili", "diskutovali", "minule",
+        
+        # Primary English keywords (since orchestrator translates to EN)
+        memory_keywords = [
+            "remember", "recall", "memory", "past", "previous",
+            "previous conversation", "know about me", "my preferences",
+            "what did i say", "what did we discuss", "stored information",
+            "saved data", "personal data", "about me", "you know that i",
+            "you remember", "do you remember", "earlier i said",
+            "as i mentioned", "previously", "last time", "before",
         ]
-
-        # English memory keywords
-        english_keywords = [
-            "memory", "remember", "recall", "past", "previous",
-            "conversation", "discussed", "talked about", "you know",
-            "do you know", "what did", "what have", "stored",
-            "recorded", "earlier", "before", "last time",
-        ]
-
-        all_keywords = czech_keywords + english_keywords
-
-        return any(keyword in thought_lower for keyword in all_keywords)
+        
+        return any(keyword in thought_lower for keyword in memory_keywords)
 
     def _generate_action(self, thought: str, context: str) -> Dict[str, Any]:
         """Generate action based on thought."""
