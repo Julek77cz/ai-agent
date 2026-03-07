@@ -136,6 +136,50 @@ class CzechBridgeClient:
                 callback(f"Error: {e}")
         return None
 
+    def translate_to_en(self, text: str) -> str:
+        """Translate Czech text to English using czech_gateway model."""
+        try:
+            import requests
+            
+            system_prompt = "You are a translator. Translate the following Czech text to English. Return ONLY the translation, nothing else."
+            payload = {
+                "model": MODELS["czech_gateway"],
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
+                "stream": False,
+                "options": HW_OPTIONS,
+            }
+            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
+            if r.status_code == 200:
+                return str(r.json()["message"]["content"]).strip()
+        except Exception as e:
+            logger.debug("translate_to_en failed: %s", e)
+        return text
+
+    def translate_to_cz(self, text: str) -> str:
+        """Translate English text to Czech using czech_gateway model."""
+        try:
+            import requests
+            
+            system_prompt = "You are a translator. Translate the following English text to Czech. Return ONLY the translation, nothing else."
+            payload = {
+                "model": MODELS["czech_gateway"],
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
+                "stream": False,
+                "options": HW_OPTIONS,
+            }
+            r = requests.post(OLLAMA_URL, json=payload, timeout=30)
+            if r.status_code == 200:
+                return str(r.json()["message"]["content"]).strip()
+        except Exception as e:
+            logger.debug("translate_to_cz failed: %s", e)
+        return text
+
 
 class JarvisV19:
     def __init__(self, streaming: bool = True):

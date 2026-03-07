@@ -59,11 +59,16 @@ class CognitiveMemory:
     
     def _check_recovery(self) -> None:
         """Check if recovery is needed from WAL snapshot."""
-        # Try to recover from snapshot
         recovered_state = self._wal.recover_from_snapshot()
         if recovered_state:
             logger.info("Recovered state from WAL snapshot")
-            # State reconstruction would be handled by individual memory modules
+            
+            # Restore working memory if present in recovered state
+            working_data = recovered_state.get("working", {})
+            if working_data:
+                for key, value in working_data.items():
+                    self.working.set(key, value)
+                logger.info("Restored %d items to working memory", len(working_data))
 
     def remember(
         self,
