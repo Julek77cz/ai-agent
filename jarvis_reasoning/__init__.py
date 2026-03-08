@@ -570,31 +570,8 @@ What should I do next? Think about the best approach."""
 
         return f"Analyzing query: {query}"
 
-    def _is_memory_query(self, thought: str) -> bool:
-        """
-        Detect if the thought is a memory query using semantic routing.
-        Queries are now in English (translated by orchestrator before ReActLoop).
-        """
-        thought_lower = thought.lower()
-        
-        # Primary English keywords (since orchestrator translates to EN)
-        memory_keywords = [
-            "remember", "recall", "memory", "past", "previous",
-            "previous conversation", "know about me", "my preferences",
-            "what did i say", "what did we discuss", "stored information",
-            "saved data", "personal data", "about me", "you know that i",
-            "you remember", "do you remember", "earlier i said",
-            "as i mentioned", "previously", "last time", "before",
-        ]
-        
-        return any(keyword in thought_lower for keyword in memory_keywords)
-
     def _generate_action(self, thought: str, context: str) -> Dict[str, Any]:
         """Generate action based on thought."""
-        # SEMANTIC ROUTING: Check if this is a memory query first
-        if self._is_memory_query(thought):
-            logger.info("Semantic Routing: Memory query detected, forcing recall tool")
-            return {"tool": "recall", "params": {"query": thought[:100]}, "parallel": False}
 
         system_prompt = (
             "CRITICAL INSTRUCTION FOR PERSONAL QUERIES:\n"
