@@ -1,0 +1,14 @@
+# JARVIS V19 Requirements
+# Historical version - backward compatibility
+
+# Core dependencies
+pydantic==2.5.3
+pydantic-core==2.14.6
+requests>=2.28.0
+json-repair>=0.1.0
+
+# Existing dependencies
+duckduckgo-search>=3.0.0
+psutil>=5.9.0
+chromadb>=0.4.0
+networkx>=3.0
