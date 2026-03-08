@@ -36,10 +36,11 @@ except ImportError:
 _PLANNER_SYSTEM = (
     "You are a task planner. Output ONLY valid JSON.\n"
     "RULE 1: Mark steps with 'parallel': true if they can run simultaneously.\n"
-    "RULE 2: For memory queries → use recall tool.\n"
-    "RULE 3: For storing facts → use remember tool.\n"
+    "RULE 2: For memory queries -> use recall tool.\n"
+    "RULE 3: For storing facts -> use remember tool.\n"
     "RULE 4: Keep plan minimal. MAXIMUM 6 steps.\n"
     "RULE 5: Include 'confidence': 0-100 for the whole plan.\n"
+    "RULE 6: When writing files (write_file), ALWAYS use just the filename (e.g. 'file.txt') and save it to the current directory. DO NOT use absolute paths like /home/user or C:\\!\n"
     f"{_TOOLS_SCHEMA}"
 )
 
@@ -48,6 +49,7 @@ _REPLAN_SYSTEM = (
     "Output ONLY valid JSON with a revised plan.\n"
     "RULE: Mark parallel steps with 'parallel': true.\n"
     "RULE: Include 'confidence': 0-100.\n"
+    "RULE: When writing files, ALWAYS use just the filename (e.g. 'file.txt') without absolute paths.\n"
     f"{_TOOLS_SCHEMA}"
 )
 

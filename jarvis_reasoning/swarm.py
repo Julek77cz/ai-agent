@@ -135,13 +135,13 @@ ROLE_TOOLS: Dict[str, Set[str]] = {
         "web_search", "recall", "read_file", "list_dir", "get_time", "system_info"
     },
     "developer": {
-        "run_command", "write_file", "read_file", "run_python", "list_dir"
+        "run_command", "write_file", "read_file", "run_python", "list_dir", "system_info"
     },
     "analyst": {
         "system_info", "list_dir", "read_file", "get_time", "run_command"
     },
     "writer": {
-        "remember", "write_file", "read_file", "recall", "list_dir"
+        "remember", "write_file", "read_file", "recall", "list_dir", "system_info", "manage_tasks", "get_time"
     },
 }
 
