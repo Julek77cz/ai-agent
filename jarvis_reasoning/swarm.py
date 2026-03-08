@@ -346,9 +346,10 @@ class SwarmManager:
                 system_prompt=_SWARM_DECOMPOSER_SYSTEM,
             )
             
-            if result and "subtasks" in result:
+            if result and "subtasks" in result and isinstance(result["subtasks"], list):
                 subtasks = []
-                for st in result["subtasks"]:
+                # Limit to max 6 subtasks for stability
+                for st in result["subtasks"][:6]:
                     subtask = SubTask(
                         id=st.get("id", f"task_{uuid.uuid4().hex[:8]}"),
                         description=st.get("description", ""),
@@ -356,10 +357,12 @@ class SwarmManager:
                         priority=st.get("priority", 5),
                         dependencies=st.get("dependencies", []),
                     )
-                    subtasks.append(subtask)
+                    if subtask.description:  # Only add valid tasks
+                        subtasks.append(subtask)
                 
-                logger.info("Decomposed into %d subtasks", len(subtasks))
-                return subtasks
+                if subtasks:
+                    logger.info("Decomposed into %d subtasks", len(subtasks))
+                    return subtasks
                 
         except Exception as e:
             logger.error("Task decomposition failed: %s", e)

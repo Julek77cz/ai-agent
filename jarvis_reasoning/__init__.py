@@ -216,8 +216,8 @@ class Verifier:
 
         except Exception as e:
             logger.warning("Verification failed: %s", e)
-            # Fail open - assume approved on error
-            return True, [f"Verification error: {str(e)}"]
+            # STRICT MODE: Fail-closed instead of fail-open
+            return False, [f"Verification error: {str(e)}"]
 
     def _generate_feedback(self, query: str, answer: str) -> Optional[Dict[str, Any]]:
         """
@@ -546,11 +546,15 @@ class ReActLoop:
                 )
 
         obs_text = "\n".join(f"- {o[:200]}" for o in observations[-3:]) if observations else "No observations yet."
+        recent_thoughts = "\n".join(f"- {t}" for t in thoughts[-2:]) if thoughts else "No previous thoughts."
 
         prompt = f"""Query: {query}
 
 Context from memory:
 {context[:1500] if context else "None"}
+
+Recent thoughts (DO NOT REPEAT THESE):
+{recent_thoughts}
 
 Previous observations:
 {obs_text}

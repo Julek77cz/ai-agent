@@ -75,7 +75,7 @@ class StepVerifier:
         )
         if raw is None:
             logger.debug("Step verifier returned None – assuming success")
-            return VerificationResult(success=True, confidence=0.6, reason="verifier unavailable")
+            return VerificationResult(success=False, confidence=0.0, reason="verifier unavailable", retry=True)
 
         return VerificationResult(
             success=bool(raw.get("success", True)),
@@ -107,7 +107,7 @@ class StepVerifier:
         )
         if raw is None:
             logger.debug("Final verifier returned None – assuming success")
-            return VerificationResult(success=True, confidence=0.5, reason="verifier unavailable")
+            return VerificationResult(success=False, confidence=0.0, reason="verifier unavailable", retry=True, suggest_replan=True)
 
         return VerificationResult(
             success=bool(raw.get("success", True)),
