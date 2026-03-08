@@ -57,7 +57,12 @@ def main():
     parser = argparse.ArgumentParser(description="JARVIS V19")
     parser.add_argument("query", nargs="?", help="One-shot query")
     parser.add_argument("--stream/--no-stream", default=True, dest="stream")
+    parser.add_argument("--debug", action="store_true", help="Enable maximum debug logging")
     args = parser.parse_args()
+    
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     
     try:
         from jarvis_core import JarvisV19

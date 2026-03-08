@@ -299,7 +299,7 @@ class SwarmManager:
             True if task should use swarm execution
         """
         # Check for multi-part queries (AND, multiple questions)
-        conjunctions = [" AND ", " a ", " a zároveň", " a pak", "同时", " und "]
+        conjunctions = [" a zároveň ", " a pak ", " and then ", " simultaneously "]
         if any(c.lower() in query.lower() for c in conjunctions):
             return True
         
