@@ -1,0 +1,16 @@
+# JARVIS V20 Requirements
+# State-of-the-Art AI Agent
+
+# Core dependencies
+pydantic>=2.5.0
+requests>=2.31.0
+json-repair>=0.25.0
+
+# Existing dependencies (from original requirements.txt)
+duckduckgo-search>=4.1.0
+chromadb>=0.4.0
+networkx>=3.2.0
+
+# V20 Additions
+numpy>=1.24.0  # For statistical calculations
+concurrent-futures>=3.4.0  # For parallel execution
