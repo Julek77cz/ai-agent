@@ -248,13 +248,19 @@ class JarvisV19:
         """
         Process a user query using ReAct reasoning loop or Swarm architecture.
 
-        Smalltalk is handled directly.
+        Translation Flow:
+        1. CZ query is translated to EN
+        2. EN query is processed by Swarm/ReAct loop
+        3. EN response is translated back to CZ
+        4. CZ response is returned to user
+
+        Smalltalk is handled directly (no translation needed).
         Complex tasks use the Swarm architecture for parallel sub-agent execution.
-        All other queries (including memory queries) go through the standard ReAct reasoning loop.
+        All other queries go through the standard ReAct reasoning loop.
         """
         self.memory.add_message("user", query)
 
-        # Handle smalltalk directly
+        # Handle smalltalk directly (no translation needed)
         if self._detect_smalltalk(query):
             response = "Ahoj! Jsem JARVIS. Jak ti mohu pomoci?"
             if stream_callback:
@@ -262,19 +268,28 @@ class JarvisV19:
             self.memory.add_message("assistant", response)
             return response
 
-        # Check if task is complex enough for swarm execution
-        if self._swarm_manager and self._is_complex_task(query):
+        # Step 1: Translate CZ query to EN for processing
+        query_en = self.bridge.translate_to_en(query)
+        logger.debug("Translated query: CZ='%s...' -> EN='%s...'", query[:50], query_en[:50])
+
+        # Step 2: Process EN query through Swarm or ReAct loop
+        if self._swarm_manager and self._is_complex_task(query_en):
             logger.info("Using Swarm architecture for complex task")
-            response = self._execute_swarm(query, stream_callback)
+            response_en = self._execute_swarm(query_en, stream_callback)
         else:
             # Use standard ReAct reasoning loop
-            response = self.reasoning.run(query, stream_callback=stream_callback)
+            response_en = self.reasoning.run(query_en, stream_callback=stream_callback)
 
-        if not response:
-            response = "Hotovo"
+        if not response_en:
+            response_en = "Done"
 
-        self.memory.add_message("assistant", response)
-        return response
+        # Step 3: Translate EN response back to CZ
+        response_cz = self.bridge.translate_to_cz(response_en)
+        logger.debug("Translated response: EN='%s...' -> CZ='%s...'", response_en[:50], response_cz[:50])
+
+        # Step 4: Return CZ response to user
+        self.memory.add_message("assistant", response_cz)
+        return response_cz
 
     def _execute_swarm(self, query: str, stream_callback: Callable = None) -> str:
         """Execute complex task using Swarm architecture."""
