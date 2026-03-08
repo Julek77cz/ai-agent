@@ -1022,7 +1022,6 @@ What action should I take? Return JSON with tool name and parameters."""
         self, query: str, observation: str, tool_success: bool, error_info: Optional[Dict]
     ) -> Dict[str, Any]:
         """Generate reflection on observation."""
-        # Simple reflection logic - can be enhanced with LLM
         reflection = {
             "continue": True,
             "reason": "",
@@ -1034,20 +1033,19 @@ What action should I take? Return JSON with tool name and parameters."""
             reflection["continue"] = True  # Continue to try recovery
             return reflection
 
-        # Check if we have enough information to answer
-        if "✅" in observation or "success" in observation.lower():
+        # Check for empty or warning results from memory
+        obs_lower = observation.lower()
+        if "no results" in obs_lower or "no memories" in obs_lower or "empty" in obs_lower:
+            reflection["reason"] = "No results found, may need to try different approach"
+            # We still stop, because we shouldn't infinitely search memory if it's empty
             reflection["sufficient"] = True
             reflection["continue"] = False
-            reflection["reason"] = "Task appears complete"
             return reflection
 
-        # For recall or search, we may need more iterations
-        if "No results" in observation or "No memories" in observation:
-            reflection["reason"] = "No results found, may need to try different approach"
-            reflection["continue"] = True
-            return reflection
-
-        reflection["reason"] = "Information gathered, evaluating if sufficient"
+        # If the tool succeeded and returned some data (and wasn't just empty), it is sufficient to answer!
+        reflection["sufficient"] = True
+        reflection["continue"] = False
+        reflection["reason"] = "Information gathered successfully."
         return reflection
 
     def _should_continue(self, reflection: Dict[str, Any]) -> bool:
