@@ -634,6 +634,12 @@ What action should I take? Return JSON with tool name and parameters."""
                 system_prompt=system_prompt,
             )
             logger.debug("Raw action result from planner: %s", result)
+
+            # Handle case where LLM returns a list of actions instead of a single dict
+            if isinstance(result, list) and len(result) > 0:
+                logger.info("Planner returned a list of actions. Taking the first one for now.")
+                result = result[0]
+
             if result and isinstance(result, dict) and "tool" in result:
                 tool_name = result.get("tool", "")
                 params = result.get("params", {})
