@@ -226,24 +226,6 @@ class JarvisV19:
         q = query.lower()
         return any(p in q for p in SMALLTALK_PATTERNS)
 
-    def _translate_to_en(self, query: str) -> str:
-        translations = {
-            "co je": "what is",
-            "kde je": "where is",
-            "najdi": "find",
-            "hledej": "search",
-            "uloz": "save",
-            "cti": "read",
-            "pis": "write",
-            "spust": "run",
-            "otevri": "open",
-            "zavri": "close",
-        }
-        result = query.lower()
-        for cz, en in translations.items():
-            result = result.replace(cz, en)
-        return result
-
     def process(self, query: str, stream_callback: Callable = None) -> str:
         """
         Process a user query using ReAct reasoning loop or Swarm architecture.
@@ -273,12 +255,13 @@ class JarvisV19:
         logger.debug("Translated query: CZ='%s...' -> EN='%s...'", query[:50], query_en[:50])
 
         # Step 2: Process EN query through Swarm or ReAct loop
+        # CRITICAL: We MUST pass stream_callback=None here so English text doesn't leak to the UI!
         if self._swarm_manager and self._is_complex_task(query_en):
             logger.info("Using Swarm architecture for complex task")
-            response_en = self._execute_swarm(query_en, stream_callback)
+            response_en = self._execute_swarm(query_en, stream_callback=None)
         else:
             # Use standard ReAct reasoning loop
-            response_en = self.reasoning.run(query_en, stream_callback=stream_callback)
+            response_en = self.reasoning.run(query_en, stream_callback=None)
 
         if not response_en:
             response_en = "Done"
@@ -287,7 +270,10 @@ class JarvisV19:
         response_cz = self.bridge.translate_to_cz(response_en)
         logger.debug("Translated response: EN='%s...' -> CZ='%s...'", response_en[:50], response_cz[:50])
 
-        # Step 4: Return CZ response to user
+        # Step 4: Output CZ response to user
+        if stream_callback:
+            stream_callback(response_cz)
+
         self.memory.add_message("assistant", response_cz)
         return response_cz
 
