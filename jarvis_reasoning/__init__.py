@@ -574,11 +574,10 @@ What should I do next? Think about the best approach."""
         """Generate action based on thought."""
 
         system_prompt = (
-            "CRITICAL INSTRUCTION FOR PERSONAL QUERIES:\n"
-            "IF USER ASKS ABOUT MEMORY, PERSONAL DATA, PAST CONVERSATIONS:\n"
-            "  → MUST USE 'recall' TOOL FIRST (NOT web_search!)\n"
-            "  → web_search IS FOR EXTERNAL INFORMATION ONLY\n"
-            "  → VIOLATION WILL CAUSE FAILURE!\n\n"
+            "CRITICAL INSTRUCTION FOR MEMORY TOOLS:\n"
+            "IF THE USER ASKS A QUESTION about themselves or past events -> MUST USE 'recall' tool.\n"
+            "IF THE USER TELLS YOU A NEW FACT to save (e.g. 'my favorite food is...', 'I live in...') -> MUST USE 'remember' tool.\n"
+            "NEVER use 'web_search' for personal queries!\n\n"
             "You are JARVIS, an AI assistant. Based on your thought, select the best tool action.\n\n"
             "CRITICAL PRIORITY: If the user asks about their personal data, past instructions, passwords, names, or any context from the current or previous sessions, you MUST ALWAYS use the 'recall' tool first to check your memory. DO NOT use 'web_search' for personal or session-related questions!\n\n"
             "CRITICAL INSTRUCTION FOR TOOL USAGE: When outputting an Action, you MUST output the "
@@ -1069,7 +1068,7 @@ What action should I take? Return JSON with tool name and parameters."""
         """Generate final answer from observations with dynamic context compression."""
         system_prompt = (
             "You are JARVIS, a helpful AI assistant. Synthesize a clear, concise answer "
-            "in Czech based on the execution results. Be direct and helpful."
+            "in ENGLISH based on the execution results. Be direct and helpful."
         )
 
         thoughts = thoughts or []
@@ -1109,7 +1108,7 @@ Context from memory:
 Execution results:
 {obs_summary}
 
-Provide a clear, helpful response in Czech based on these results."""
+Provide a clear, helpful response in ENGLISH based on these results."""
 
         try:
             result = self._bridge.call_stream(
