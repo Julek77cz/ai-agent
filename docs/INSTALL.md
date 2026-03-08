@@ -3,15 +3,15 @@
 ## Quick Start (Double-Click)
 
 ### Windows
-1. Double-click `setup.bat`
+1. Double-click `scripts/setup.bat`
 2. Wait for installation to complete (~10-15 minutes for first-time setup)
-3. Double-click `run.bat` to start JARVIS
+3. Double-click `scripts/run.bat` to start JARVIS
 
 ### Linux/Mac
 ```bash
-chmod +x setup.sh
-./setup.sh
-./run.sh
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+./scripts/run.sh
 ```
 
 ---
@@ -36,8 +36,8 @@ chmod +x setup.sh
 ## Installation Steps
 
 ### Step 1: Run Setup
-- **Windows**: Double-click `setup.bat`
-- **Linux/Mac**: `./setup.sh`
+- **Windows**: Double-click `scripts/setup.bat`
+- **Linux/Mac**: `./scripts/setup.sh`
 
 The setup will:
 1. ✅ Check Python version
@@ -48,8 +48,8 @@ The setup will:
 6. ✅ Create data directories
 
 ### Step 2: Run JARVIS
-- **Windows**: Double-click `run.bat`
-- **Linux/Mac**: `./run.sh`
+- **Windows**: Double-click `scripts/run.bat`
+- **Linux/Mac**: `./scripts/run.sh`
 
 Or manually:
 ```bash
@@ -84,7 +84,7 @@ On first run, JARVIS will:
 - Linux/Mac: Run `ollama serve` in terminal
 
 ### "Model not found"
-- Re-run setup: `./setup.sh` or `setup.bat`
+- Re-run setup: `./scripts/setup.sh` or `scripts/setup.bat`
 - Or manually: `ollama pull <model-name>`
 
 ### Port 11434 already in use
@@ -122,15 +122,16 @@ ollama pull your-model:tag
 
 ```
 jarvis_v19/
-├── setup.bat          # Windows installer
-├── setup.sh           # Linux/Mac installer
-├── setup.py           # Cross-platform Python installer
-├── run.bat            # Windows launcher
-├── run.sh             # Linux/Mac launcher
-├── requirements.txt  # Python dependencies
-├── jarvis_v19.py      # Main entry point
-├── .venv/             # Virtual environment (created by setup)
-└── jarvis_data/       # Runtime data (created by JARVIS)
+├── scripts/
+│   ├── setup.bat          # Windows installer
+│   ├── setup.sh           # Linux/Mac installer
+│   ├── setup.py           # Cross-platform Python installer
+│   ├── run.bat            # Windows launcher
+│   └── run.sh             # Linux/Mac launcher
+├── requirements.txt      # Python dependencies
+├── jarvis_v19.py          # Main entry point
+├── .venv/                 # Virtual environment (created by setup)
+└── jarvis_data/           # Runtime data (created by JARVIS)
     ├── memory/
     ├── chromadb/
     ├── knowledge_graph/

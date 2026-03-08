@@ -9,8 +9,8 @@ Tests the following fixes:
 5. Edge cases and error recovery
 
 Usage:
-    cd /home/engine/project/ai-agent
-    python test_scenarios.py
+    cd /home/engine/project
+    python tests/test_scenarios.py
 """
 
 import sys
@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("JARVIS.TESTS")
 
 # Add project to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_reasoning import ReActLoop, ToolResultParser
 from jarvis_tools import validate_tool_params, get_tool_required_params, get_tool_param_examples, TOOL_SCHEMAS
